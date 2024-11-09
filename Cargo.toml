@@ -1,0 +1,17 @@
+[package]
+name = "coherent-rs"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0"
+description = "Rust-based serial communication to control Coherent lasers"
+keywords = ["microscopy", "coherent", "laser", "two-photon"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+serialport = "4.6.0"
+rusb = "0.9"
+
+[lib]
+name = "coherent_rs"
+crate-type = ["cdylib"]
