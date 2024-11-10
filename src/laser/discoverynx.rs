@@ -15,6 +15,7 @@ const PARITY : serialport::Parity = serialport::Parity::None;
 
 /// The Coherent laser model Discovery NX.
 #[derive(Debug)]
+#[repr(C)]
 pub struct Discovery{
     pub port : Box<dyn serialport::SerialPort>,
     pub serial_number : String,
@@ -394,15 +395,23 @@ impl Laser for Discovery {
         let mut buf = String::new();
         let mut reader = std::io::BufReader::new(&mut self.port);
         reader.read_line(&mut buf).map_err(|_| CoherentError::InvalidResponseError("Error reading line".to_string()))?;
+        if buf.contains("COMMAND NOT EXECUTED") {
+            return Err(CoherentError::CommandNotExecutedError);
+        }
         if self.echo {
-            if buf.split(&(command_str.clone()+" ")).collect::<Vec<&str>>().len() != 2 {
-                Err(
+            let split_on_command = buf.split(&(command_str.clone()+" ")).collect::<Vec<&str>>();
+            if split_on_command.len() != 2 {
+                return Err(
                     CoherentError::InvalidResponseError(
                         format!{"Echo does not match command. Expected : {}, Got : {}", command_str, buf}
                     )
                 )
             }
-            else{Ok(())}
+            if split_on_command[1].trim() != "" {
+                return Err(CoherentError::InvalidArgumentsError(
+                    split_on_command[1].to_string()
+                ));
+            }
         }
         else {
             if buf.trim() != "" {
@@ -410,8 +419,9 @@ impl Laser for Discovery {
                     format!{"Expected no response, Got : {}", buf}
                 ));
             }
-            Ok(())
         }
+
+        Ok(())
     }
 
     /// Send a query to the laser that expects a response
@@ -448,6 +458,78 @@ impl Laser for Discovery {
         };
         self.port.flush().map_err(|e| CoherentError::InvalidResponseError(e.to_string()))?;
         query.parse_result(buf)
+    }
+}
+
+/// Convenience functions
+impl Discovery {
+
+    /// Set the wavelength of the variable-wavelength laser
+    /// 
+    /// # Arguments
+    /// 
+    /// * `wavelength` - The wavelength to set the laser to (in nanometers).
+    /// 
+    /// # Example
+    /// 
+    /// ```
+    /// let mut discovery = Discovery::find_first().unwrap();
+    /// discovery.set_wavelength(840.0).unwrap();
+    /// ```
+    pub fn set_wavelength(&mut self, wavelength : f32) -> Result<(), CoherentError> {
+        self.send_command(DiscoveryNXCommands::Wavelength(wavelength))
+    }
+
+    pub fn get_wavelength(&mut self) -> Result<f32, CoherentError> {
+        self.query(DiscoveryNXQueries::Wavelength{})
+    }
+
+    pub fn set_gdd(&mut self, gdd : f32) -> Result<(), CoherentError> {
+        self.send_command(DiscoveryNXCommands::Gdd(gdd))
+    }
+
+    pub fn get_gdd(&mut self) -> Result<f32, CoherentError> {
+        self.query(DiscoveryNXQueries::Gdd{})
+    }
+
+    pub fn set_shutter(&mut self, laser : DiscoveryLaser, state : ShutterState) -> Result<(), CoherentError> {
+        self.send_command(DiscoveryNXCommands::Shutter((laser, state)))
+    }
+
+    pub fn get_shutter(&mut self, laser : DiscoveryLaser) -> Result<ShutterState, CoherentError> {
+        self.query(DiscoveryNXQueries::Shutter{laser})
+    }
+
+    pub fn set_gdd_curve(&mut self, curve : u8) -> Result<(), CoherentError> {
+        self.send_command(DiscoveryNXCommands::GddCurve(curve))
+    }
+
+    pub fn get_gdd_curve(&mut self) -> Result<i32, CoherentError> {
+        self.query(DiscoveryNXQueries::GddCurve{})
+    }
+
+    pub fn set_gdd_curve_n(&mut self, name : &str) -> Result<(), CoherentError> {
+        self.send_command(DiscoveryNXCommands::GddCurveN(name.to_string()))
+    }
+
+    pub fn get_gdd_curve_n(&mut self) -> Result<String, CoherentError> {
+        self.query(DiscoveryNXQueries::GddCurveN{})
+    }
+    
+    pub fn set_alignment_mode(&mut self, laser : DiscoveryLaser, mode : bool) -> Result<(), CoherentError> {
+        self.send_command(DiscoveryNXCommands::AlignmentMode((laser, mode)))
+    }
+
+    pub fn get_alignment_mode(&mut self, laser : DiscoveryLaser) -> Result<bool, CoherentError> {
+        self.query(DiscoveryNXQueries::AlignmentMode{laser})
+    }
+
+    pub fn get_power(&mut self, laser : DiscoveryLaser) -> Result<f32, CoherentError> {
+        self.query(DiscoveryNXQueries::Power{laser})
+    }
+
+    pub fn get_serial(&mut self) -> Result<String, CoherentError> {
+        self.query(DiscoveryNXQueries::Serial{})
     }
 }
 
@@ -586,12 +668,49 @@ mod tests {
         ).unwrap();
 
         println!("Wavelength: {:?}", new_wv);
+
+    }
+
+    #[test]
+    fn test_invalid_args() {
+        let mut discovery = Discovery::find_first().unwrap();
+
+        println!("Testing invalid wavelength");
+
+        let result = discovery.send_command(
+            DiscoveryNXCommands::Wavelength(0.0)
+        );
+
+        assert!(result.is_err());
+
+        let wv = discovery.query(
+            DiscoveryNXQueries::Wavelength{}
+        ).unwrap();
+
+        println!("Wavelength: {:?}", wv);
+
+        println!("Testing invalid GDD");
+
+        let result = discovery.send_command(
+            DiscoveryNXCommands::Gdd(50000.0)
+        );
+
+        assert!(result.is_err());
+
+        let gdd = discovery.query(
+            DiscoveryNXQueries::Gdd{}
+        ).unwrap();
+
+        println!("GDD: {:?}", gdd);
+
+
+
     }
 
     #[test]
     fn test_gdd() {
         let mut discovery = Discovery::find_first().unwrap();
-        
+
         let current_gdd = discovery.query(
             DiscoveryNXQueries::Gdd{}
         ).unwrap();
@@ -617,6 +736,87 @@ mod tests {
         ).unwrap();
 
         println!("Returned GDD: {:?}", new_gdd);
+    }
+
+    #[test]
+    fn test_convenience_funcs() {
+        let mut discovery = Discovery::find_first().unwrap();
+
+        let current_gdd = discovery.get_gdd().unwrap();
+        println!("GDD: {:?}... Setting to 0", current_gdd);
+
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        discovery.set_gdd(0.0).unwrap();
+
+        let new_gdd = discovery.get_gdd().unwrap();
+        println!("New GDD: {:?}", new_gdd);
+
+        discovery.set_gdd(current_gdd).map_err(
+            |e| {match e {
+                CoherentError::CommandNotExecutedError => discovery.set_gdd(current_gdd).unwrap(),
+                _ => println!("Error : {:?}", e)
+            }}
+        ).unwrap();
+        println!("Returned GDD: {:?}", discovery.get_gdd().unwrap());
+
+        let current_wv = discovery.get_wavelength().unwrap();
+        println!("Wavelength: {:?}... Setting to 840", current_wv);
+
+        discovery.set_wavelength(840.0).unwrap();
+
+        while discovery.query(DiscoveryNXQueries::Tuning{}).unwrap().into() {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+
+        let new_wv = discovery.get_wavelength().unwrap();
+        println!("New Wavelength: {:?}", new_wv);
+
+        discovery.set_wavelength(current_wv).unwrap();
+
+        while discovery.query(DiscoveryNXQueries::Tuning{}).unwrap().into() {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+
+        println!("Returned Wavelength: {:?}", discovery.get_wavelength().unwrap());
+
+        println!("Opening variable shutter");
+        discovery.set_shutter(DiscoveryLaser::VariableWavelength, ShutterState::Open).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        println!("Shutter state: {:?}", discovery.get_shutter(DiscoveryLaser::VariableWavelength).unwrap());
+        println!("Closing variable shutter");
+        discovery.set_shutter(DiscoveryLaser::VariableWavelength, ShutterState::Closed).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        println!("Shutter state: {:?}", discovery.get_shutter(DiscoveryLaser::VariableWavelength).unwrap());
+
+        println!("Opening fixed shutter");
+        discovery.set_shutter(DiscoveryLaser::FixedWavelength, ShutterState::Open).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        println!("Shutter state: {:?}", discovery.get_shutter(DiscoveryLaser::FixedWavelength).unwrap());
+        println!("Closing fixed shutter");
+        discovery.set_shutter(DiscoveryLaser::FixedWavelength, ShutterState::Closed).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        println!("Shutter state: {:?}", discovery.get_shutter(DiscoveryLaser::FixedWavelength).unwrap());
+
+        println!("Setting variable alignment mode to true");
+        discovery.set_alignment_mode(DiscoveryLaser::VariableWavelength, true).unwrap();
+        println!("Alignment mode: {:?}", discovery.get_alignment_mode(DiscoveryLaser::VariableWavelength).unwrap());
+
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        println!("Setting variable alignment mode to false");
+        discovery.set_alignment_mode(DiscoveryLaser::VariableWavelength, false).unwrap();
+        println!("Alignment mode: {:?}", discovery.get_alignment_mode(DiscoveryLaser::VariableWavelength).unwrap());
+
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        println!("Setting fixed alignment mode to true");
+        discovery.set_alignment_mode(DiscoveryLaser::FixedWavelength, true).unwrap();
+        println!("Alignment mode: {:?}", discovery.get_alignment_mode(DiscoveryLaser::FixedWavelength).unwrap());
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        println!("Setting fixed alignment mode to false");
+        discovery.set_alignment_mode(DiscoveryLaser::FixedWavelength, false).unwrap();
+        println!("Alignment mode: {:?}", discovery.get_alignment_mode(DiscoveryLaser::FixedWavelength).unwrap());
+
+
 
 
     }

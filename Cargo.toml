@@ -13,4 +13,4 @@ serialport = "4.6.0"
 
 [lib]
 name = "coherent_rs"
-# crate-type = ["cdylib"]
+crate-type = ["cdylib"]

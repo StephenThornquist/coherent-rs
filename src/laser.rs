@@ -118,13 +118,13 @@ pub trait Query : LaserCommand {
 pub trait Laser: Sized {
 
     type CommandEnum : LaserCommand;
-    // type QueryEnum : LaserCommand;
-    // type QueryResult;
 
     /// Create a new instance of the laser by opening a
     /// serial connection to the specified port. If no port
-    /// is specified or no serial number is specified, this will
-    /// search for a laser on all available serial ports.
+    /// is specified and no serial number is specified, this will
+    /// search for a laser on all available serial ports. This
+    /// method is intended to find a laser if there's one available,
+    /// provided it matches the requests.
     /// 
     /// # Arguments
     /// 
@@ -136,38 +136,68 @@ pub trait Laser: Sized {
     /// * `serial_number` - The serial number of the laser to connect to.
     /// If this is specified and `port` is specified, the serial number will be
     /// checked against the laser connected to the specified port.
-    fn new(port : Option<&str>, serial_number : Option<&str>) -> Result<Self, CoherentError>{
-        let coherent_devices = get_all_coherent_devices();
+    /// 
+    /// # Returns
+    /// 
+    /// A `Result` containing the laser object if successful, or a `CoherentError` if not.
+    /// 
+    /// # Examples
+    /// 
+    /// ```rust
+    /// use coherent_rs::{Discovery};
+    /// 
+    /// // Open a specific port, but it doesn't exist
+    /// let discovery = Discovery::new(Some("NotAPort"), None);
+    /// assert!(discovery.is_err());
+    /// 
+    /// // Open a specific port that exists
+    /// let discovery = Discovery::new(Some("COM5"), None).unwrap();
+    /// 
+    /// // Open the first available laser
+    /// let discovery = Discovery::new(None, None).unwrap();
+    /// 
+    /// // Open a specific laser by serial number
+    /// let discovery = Discovery::new(None, Some("123456")).unwrap();
+    /// 
+    /// // Open a specific laser by serial number on a specific port
+    /// let discovery = Discovery::new(Some("COM5"), Some("123456")).unwrap();
+    /// ```
+    fn new(port_name : Option<&str>, serial_number : Option<&str>) -> Result<Self, CoherentError>{
 
-        Err(CoherentError::UnrecognizedDevice)
-
-        // Get devices that match the serial number
-        // coherent_devices.into_iter().filter(|device| {
-        //     match &device.port_type {
-        //         serialport::SerialPortType::UsbPort(info) => {
-        //             match serial_number {
-        //                 Some(serial) => {
-        //                     info.serial_number == Some(serial.to_string())
-        //                 },
-        //                 None => {
-        //                     true
-        //                 }
-        //             }
-        //         },
-        //         _ => false
-        //     }
-        // }) // Then filter by the struct's `is_valid_device` method
-        // .filter(|device| Self::is_valid_device(device)).map(|device| {
-        //     let port = serialport::new(&device.port_name, BAUDRATE)
-        //         .data_bits(DATABITS)
-        //         .stop_bits(STOPBITS)
-        //         .parity(PARITY)
-        //         .open().unwrap();
-        //     Self::from_port(port)
-        // }).next().ok_or(CoherentError::UnrecognizedDevice)
+        // Nested cases
+        match port_name {
+            Some(port_name) => {
+                let port_info = serialport::available_ports().unwrap().into_iter().filter(|port| {
+                    port.port_name == port_name
+                }).next().ok_or(CoherentError::UnrecognizedDevice)?;
+                
+                match serial_number {
+                    Some(serial) => {
+                        match &port_info.port_type {
+                            serialport::SerialPortType::UsbPort(info) => {
+                                if info.serial_number == Some(serial.to_string()) {
+                                    Ok(Self::from_port_info(&port_info))
+                                } else {
+                                    Err(CoherentError::UnrecognizedDevice)
+                                }
+                            },
+                            _ => Err(CoherentError::UnrecognizedDevice)
+                        }
+                    },
+                    None => Ok(Self::from_port_info(&port_info))
+                }
+            }
+            None => {
+                match serial_number {
+                    Some(serial) => Err(CoherentError::UnrecognizedDevice),
+                    None => Self::find_first()
+                }
+            }
+        }
     }
 
     /// Send a command to the laser directly over the serial port. Maybe I shouldn't expose this in the trait??
+    /// But this is probably a good emergency tool to expose... I don't know. TBD
     fn send_serial_command(&mut self, command : &str) -> Result<(), CoherentError>;
 
     /// Specifies from a serial port whether or not the device is a valid
