@@ -10,8 +10,7 @@ keywords = ["microscopy", "coherent", "laser", "two-photon"]
 
 [dependencies]
 serialport = "4.6.0"
-rusb = "0.9"
 
 [lib]
 name = "coherent_rs"
-crate-type = ["cdylib"]
+# crate-type = ["cdylib"]

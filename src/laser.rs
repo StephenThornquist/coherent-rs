@@ -1,19 +1,34 @@
-use serialport;
-use rusb;
-use crate::CoherentError;
+//! laser.rs
+//! 
+//! This module contains the `Laser` trait and associated types for interacting with Coherent lasers.
 
-const BAUDRATE : u32 = 19200;
-const DATABITS : serialport::DataBits = serialport::DataBits::Eight;
-const STOPBITS : serialport::StopBits = serialport::StopBits::One;
-const PARITY : serialport::Parity = serialport::Parity::None;
+use serialport;
+use crate::{get_all_coherent_devices, CoherentError};
+
+#[allow(non_snake_case)]
+pub mod DiscoveryNX;
+
+pub use DiscoveryNX::{Discovery, DiscoveryNXCommands, DiscoveryNXQueries, DiscoveryLaser};
 
 /// The Coherent laser models currently supported by this library.
+#[derive(Debug, PartialEq)]
 pub enum LaserType {
     DiscoveryNX,
     // ChameleonUltra,
     UnrecognizedDevice,
 }
 
+impl From<u16> for LaserType {
+    /// Convert a Product ID into a `LaserType`.
+    fn from(product_id : u16) -> Self {
+        match product_id {
+            516 => LaserType::DiscoveryNX,
+            _ => LaserType::UnrecognizedDevice,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum LaserState {
     Standby,
     On,
@@ -22,7 +37,7 @@ pub enum LaserState {
 /// The state of the laser shutter.
 /// Can be coerced from `bool` with
 /// `Open` being `true` and `Closed` being `false`.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum ShutterState{
     Open,
     Closed,
@@ -40,17 +55,71 @@ impl From<bool> for ShutterState{
     }
 }
 
+impl std::ops::Not for ShutterState {
+    type Output = Self;
+    fn not(self) -> Self {
+        match self {
+            ShutterState::Open => ShutterState::Closed,
+            ShutterState::Closed => ShutterState::Open,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum TuningStatus {
+    Tuning,
+    Ready
+}
+
+impl From<bool> for TuningStatus {
+    fn from(tuning : bool) -> Self {
+        if tuning {
+            TuningStatus::Tuning
+        } else {
+            TuningStatus::Ready
+        }
+    }
+}
+
+impl Into<bool> for TuningStatus {
+    fn into(self) -> bool {
+        match self {
+            TuningStatus::Tuning => true,
+            TuningStatus::Ready => false,
+        }
+    }
+}
+
+impl std::ops::Not for TuningStatus {
+    type Output = Self;
+    fn not(self) -> Self {
+        match self {
+            TuningStatus::Tuning => TuningStatus::Ready,
+            TuningStatus::Ready => TuningStatus::Tuning,
+        }
+    }
+}
+
+pub trait LaserCommand {
+    fn to_string(&self) -> String;
+}
+
+pub trait Query : LaserCommand {
+    type Result;
+    fn parse_result(&self, result : &str) -> Result<Self::Result, CoherentError>;
+}
+
 /// Coherent Lasers operate using two types of commands:
 /// * Commands - These are commands that are sent to the laser
 /// to change its state or configuration.
 /// 
 /// * Queries - These are commands that are sent to the laser
 /// to request information about its state or configuration.
-pub trait Laser : Sized {
+pub trait Laser: Sized {
 
-    type CommandEnum;
-    type QueryEnum;
-    type QueryResult;
+    type CommandEnum : LaserCommand;
+    // type QueryEnum : LaserCommand;
+    // type QueryResult;
 
     /// Create a new instance of the laser by opening a
     /// serial connection to the specified port. If no port
@@ -68,123 +137,71 @@ pub trait Laser : Sized {
     /// If this is specified and `port` is specified, the serial number will be
     /// checked against the laser connected to the specified port.
     fn new(port : Option<&str>, serial_number : Option<&str>) -> Result<Self, CoherentError>{
-        
-        // If a port is specified, search for it.
-        let port_builder = match port {
-            // Port is specified
-            Some(port) => {
-                // Feels like I'm probably using the API wrong...
-                let sp = serialport::new(port, BAUDRATE);
-                let sp = sp.baud_rate(BAUDRATE);
-                let sp = sp.data_bits(DATABITS);
-                let sp = sp.stop_bits(STOPBITS);
-                let sp = sp.parity(PARITY);
-                sp.open()?
-            },
-            // No port specified, search for serial number
-            None => {
-                if serial_number.is_none() {
-                    return Err(CoherentError::InvalidArgumentsError(
-                        "If port is None, serial_number must be provided.".to_string()
-                    ));
-                }
-                return Err(CoherentError::InvalidResponseError);
-                
-                // let ports = serialport::available_ports()?;
-                // for port in ports {
-                //     let port = serialport::new(&port.port_name, 9600).open();
-                // }
-            }
-        };
+        let coherent_devices = get_all_coherent_devices();
+
         Err(CoherentError::UnrecognizedDevice)
+
+        // Get devices that match the serial number
+        // coherent_devices.into_iter().filter(|device| {
+        //     match &device.port_type {
+        //         serialport::SerialPortType::UsbPort(info) => {
+        //             match serial_number {
+        //                 Some(serial) => {
+        //                     info.serial_number == Some(serial.to_string())
+        //                 },
+        //                 None => {
+        //                     true
+        //                 }
+        //             }
+        //         },
+        //         _ => false
+        //     }
+        // }) // Then filter by the struct's `is_valid_device` method
+        // .filter(|device| Self::is_valid_device(device)).map(|device| {
+        //     let port = serialport::new(&device.port_name, BAUDRATE)
+        //         .data_bits(DATABITS)
+        //         .stop_bits(STOPBITS)
+        //         .parity(PARITY)
+        //         .open().unwrap();
+        //     Self::from_port(port)
+        // }).next().ok_or(CoherentError::UnrecognizedDevice)
     }
 
-    fn send_command(&self, command : Self::CommandEnum) -> Result<(), CoherentError>{Ok(())}
+    /// Send a command to the laser directly over the serial port. Maybe I shouldn't expose this in the trait??
+    fn send_serial_command(&mut self, command : &str) -> Result<(), CoherentError>;
 
-    fn query(&self, query : Self::QueryEnum) -> Result<Self::QueryResult, CoherentError>;
+    /// Specifies from a serial port whether or not the device is a valid
+    /// instance of the struct deriving the `Laser` trait.
+    fn is_valid_device(serialportinfo : &serialport::SerialPortInfo)->bool;
 
-}
-
-/// The Coherent laser model Discovery NX.
-pub struct DiscoveryNX{
-    port : Box<dyn serialport::SerialPort>,
-    pub serial_number : String,
-}
-
-pub enum DiscoveryLaser {
-    VariableWavelength,
-    FixedWavelength,
-}
-
-pub enum DiscoveryNXCommands {
-    Echo(bool), // Sets whether or not the laser will echo commands
-    Laser(LaserState), // Set the laser to standby
-    Shutter((DiscoveryLaser, ShutterState)), // Open or close the shutter
-    FaultClear, // Clear any faults
-    AlignmentMode((DiscoveryLaser, bool)), // Set the laser to alignment mode
-    Wavelength(f32), // Set the wavelength
-    Heartbeat,
-    GddCurve(u8), // Set the GDD calibration curve
-    GddCurveN(String), // Set the GDD calibration curve by name
-    Gdd(f32),
-    SetCurveN(String), // Sets name of current calibration curve
-}
-
-pub enum DiscoveryNXQueries {
-    Echo,
-    Laser,
-    Shutter(DiscoveryLaser),
-    Keyswitch,
-    Faults,
-    FaultText,
-    Tuning,
-    AlignmentMode(DiscoveryLaser),
-    Status,
-    Wavelength,
-    Power(DiscoveryLaser),
-    GddCurve,
-    GddCurveN,
-    Gdd,
-    Serial,
-}
-
-pub enum QueryResult {
-    Echo(bool),
-    Laser(LaserState),
-    Shutter(ShutterState),
-    Keyswitch(bool),
-    Faults(u8),
-    FaultText(String),
-    Tuning(u8),
-    AlignmentMode(bool),
-    Status(u8),
-    Wavelength(f32),
-    Power(f32),
-    GddCurve(u8),
-    GddCurveN(String),
-    Gdd(f32),
-    Serial(String),
-}
-
-impl DiscoveryNX {
-
-    fn send_serial_command(&mut self, command : &str) -> Result<(), CoherentError> {
-        let command = command.to_string() + "\r\n"; // Need to end with <CR><LF>
-        self.port.write(command.as_bytes()).map_err(
-            |e| CoherentError::WriteError(e)
-        )?;
-        Ok(())
+    /// Create a new instance of the laser from a `SerialPortInfo` object
+    /// specifying where to access the laser.
+    fn from_port_info(serialportinfo : &serialport::SerialPortInfo) -> Self;
+    
+    /// Create a new instance of the laser from a port name.
+    fn from_port_name(port_name : &str) -> Result<Self, CoherentError> {
+        let port_info = serialport::available_ports().unwrap().into_iter().filter(|port| {
+            port.port_name == port_name
+        }).next().ok_or(CoherentError::UnrecognizedDevice)?;
+        Ok(Self::from_port_info(&port_info))
     }
-}
 
-impl Laser for DiscoveryNX {
-    type CommandEnum = DiscoveryNXCommands;
-    type QueryEnum = DiscoveryNXQueries;  
-    type QueryResult = QueryResult;
-
-    fn query(&self, query : Self::QueryEnum) -> Result<Self::QueryResult, CoherentError> {
-        Err(CoherentError::UnrecognizedDevice)
+    /// Find the first instance of a laser of the class on any available port.
+    fn find_first() -> Result<Self, CoherentError> {
+        let port_info = serialport::available_ports().unwrap().into_iter().filter(|port| {
+            Self::is_valid_device(port)
+        }).next().ok_or(CoherentError::UnrecognizedDevice)?;
+        Ok(Self::from_port_info(&port_info))
     }
+
+    /// Send a command to the laser that doesn't expect a response
+    fn send_command(&mut self, command : Self::CommandEnum) -> Result<(), CoherentError>{
+        let command = command.to_string();
+        self.send_serial_command(&command)
+    }
+
+    /// Send a query to the laser that expects a response
+    fn query<Q : Query>(&mut self, query : Q) -> Result<Q::Result, CoherentError>;
 }
 
 #[cfg(test)]
@@ -221,21 +238,4 @@ mod tests {
         }
     }
 
-    #[test]
-    fn print_available_usbs(){
-        for device in rusb::devices().unwrap().iter() {
-            let device_desc = device.device_descriptor().unwrap();
-            let handle = device.open().unwrap();
-            println!(
-                "Device: Vendor ID: {:?} Product ID: {:?} Len: {:?} Address: {:?}, ManStrAscii {:?} ProdStrAscii {:?} SerialStrAscii {:?}",
-                device_desc.vendor_id(),
-                device_desc.product_id(),
-                device_desc.length(),
-                device_desc.serial_number_string_index(),
-                handle.read_manufacturer_string_ascii(&device_desc).unwrap(),
-                handle.read_product_string_ascii(&device_desc).unwrap(),
-                handle.read_serial_number_string_ascii(&device_desc).unwrap(),
-            );
-        }
-    }
 }
