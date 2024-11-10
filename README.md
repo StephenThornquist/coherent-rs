@@ -118,19 +118,11 @@ for every new laser / function, is:
 ```rust
 use coherent_rs::laser::{Discovery, DiscoveryNXQueries, DiscoveryNXCommands, DiscoveryLaser};
 
-let not_discovery = open::<Discovery>("NotAPort");
-assert!(not_discovery.is_err());
-println!{"Returned : {:?}", not_discovery}
-
-let discovery = Discovery::find_first();
-assert!(discovery.is_ok());
-let mut discovery = discovery.unwrap();
-println!("{:?}", discovery);
+let discovery = Discovery::find_first().unwrap();
 
 println!{"Serial : {:?}", discovery.get_serial().unwrap()};
 
 let fixed_wavelength_power = discovery.get_power(laser::DiscoveryLaser::FixedWavelength);
-assert!(fixed_wavelength_power.is_ok());
 
 println!{"Fixed wavelength beam power : {:?}", fixed_wavelength_power.unwrap()}
 
@@ -149,4 +141,59 @@ This tool was developed in `Rust` to make it behave smoothly and easily across
 platforms, but an expected use case is calling this code from `C` (e.g. to implement
 a `ROS2` node controlling a laser, or to integrate into legacy `C`-based microscope control).
 This crate exposes a limited C ABI to retrieve a pointer to and from the lasers implemented inside
-and call and set specific functions.
+and call and set specific functions. A simple example script is in `c/example.cpp`.
+
+```c
+/*
+Example code to demonstrate the FFI of the Rust code with C++
+*/
+#include "discovery.h"
+#include <iostream>
+
+int main() {
+    Discovery discovery = discovery_find_first();
+    if (discovery == nullptr) {
+        return 1;
+    }
+    float wavelength = discovery_get_wavelength(discovery);
+    float power_variable = discovery_get_power_variable(discovery);
+    float power_fixed = discovery_get_power_fixed(discovery);
+    float gdd = discovery_get_gdd(discovery);
+    bool alignment_variable = discovery_get_alignment_variable(discovery);
+    bool alignment_fixed = discovery_get_alignment_fixed(discovery);
+
+    std::cout << "Wavelength: " << wavelength << " nm" << std::endl;
+    std::cout << "Variable Power: " << power_variable << " mW" << std::endl;
+    std::cout << "Fixed Power: " << power_fixed << " mW" << std::endl;
+    std::cout << "GDD: -" << gdd << " fs^2" << std::endl;
+    std::cout << "Variable Alignment: " << alignment_variable << std::endl;
+    std::cout << "Fixed Alignment: " << alignment_fixed << std::endl;
+
+    discovery_set_wavelength(discovery, 800.0);
+    std::cout << "New wavelength: " << discovery_get_wavelength(discovery) << " nm" << std::endl;
+    discovery_set_wavelength(discovery, wavelength);
+    std::cout << "Restored to: " << discovery_get_wavelength(discovery) << " nm" << std::endl;
+
+    free_discovery(discovery);
+    return 0;
+}
+
+```
+
+This can be executed by first building the crate:
+```
+cargo build --release
+```
+and then compiling, in this example on Windows (note that you need to use the right architecture,
+so either modify your `target` in `cargo build` or use the `x64 Native` command line on Windows!)
+Ubuntu:
+TODO
+
+Windows:
+```
+cl /I ./c ./c/example.cpp /link target\release\coherent_rs.dll.lib
+```
+
+Then copy the `coherent_rs.dll` from `.\target\release` to the main directory
+(or alternatively, add the dll location to your `PATH`) and you can run
+`example.exe`!

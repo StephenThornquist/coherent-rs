@@ -1,2 +1,6 @@
 /target
+.vscode
 *.pdf
+*.dll
+*.exe
+*.obj
