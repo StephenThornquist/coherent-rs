@@ -7,8 +7,6 @@ use std::io::{Write, BufRead};
 use crate::{CoherentError, Laser};
 use crate::laser::{LaserCommand, Query, LaserState, ShutterState, LaserType, TuningStatus};
 
-const SERIAL_PATIENCE : u64 = 100;
-
 const BAUDRATE : u32 = 19200;
 const DATABITS : serialport::DataBits = serialport::DataBits::Eight;
 const STOPBITS : serialport::StopBits = serialport::StopBits::One;
@@ -374,7 +372,6 @@ impl Laser for Discovery {
             |e| CoherentError::WriteError(e)
         )?;
         serial_port.flush().unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(SERIAL_PATIENCE));
 
         // Read the result
         let mut buf = String::new();
@@ -392,7 +389,6 @@ impl Laser for Discovery {
         ).map_err(|e| CoherentError::WriteError(e))?;
         serial_port.flush().map_err(|e| CoherentError::WriteError(e))?;
 
-        std::thread::sleep(std::time::Duration::from_millis(SERIAL_PATIENCE));
 
         let mut buf = String::new();
         let mut reader = std::io::BufReader::new(&mut serial_port);
@@ -439,7 +435,6 @@ impl Laser for Discovery {
     fn send_command(&mut self, command : DiscoveryNXCommands) -> Result<(), CoherentError> {
         let command_str = command.to_string();
         self.send_serial_command(&command_str)?;
-        std::thread::sleep(std::time::Duration::from_millis(SERIAL_PATIENCE));
         // Confirm the echo
         let mut buf = String::new();
         let mut reader = std::io::BufReader::new(&mut self.port);
@@ -500,7 +495,6 @@ impl Laser for Discovery {
         self.send_serial_command(&query_str)?;
         self.port.flush()
             .map_err(|e| CoherentError::InvalidResponseError(e.to_string()))?;
-        std::thread::sleep(std::time::Duration::from_millis(SERIAL_PATIENCE));
         let mut buf = String::new();
         let mut reader = std::io::BufReader::new(&mut self.port);
         reader.read_line(&mut buf)
