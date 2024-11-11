@@ -28,6 +28,9 @@ int main() {
     discovery_set_wavelength(discovery, wavelength);
     std::cout << "Restored to: " << discovery_get_wavelength(discovery) << " nm" << std::endl;
 
+    int error_code = discovery_set_wavelength(discovery, 2.0);
+    std::cout << "Trying to set wavelength to 2.0 nm results in error code: " << error_code << std::endl;
+
     free_discovery(discovery);
     return 0;
 }

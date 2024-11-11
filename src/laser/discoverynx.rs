@@ -378,7 +378,6 @@ impl Laser for Discovery {
         let mut reader = std::io::BufReader::new(&mut serial_port);
         reader.read_line(&mut buf)
             .map_err(|_| CoherentError::InvalidResponseError("Error reading line".to_string()))?;
-        println!("Echo : {:?}", buf);
         let echo_on = buf.contains("E 1\r\n");
         let prompt_on = buf.contains("Chameleon");
         if !buf.contains("\r\n") { return Err(CoherentError::InvalidResponseError(buf)); }

@@ -5,7 +5,10 @@ use coherent_rs::{laser, Discovery, laser::Laser};
 /// C ABI
 #[no_mangle]
 pub unsafe extern "C" fn discovery_find_first() -> *mut Discovery {
-    Box::into_raw(Box::new(Discovery::find_first().unwrap()))
+    match Discovery::find_first() {
+        Ok(discovery) => Box::into_raw(Box::new(discovery)),
+        Err(_) => std::ptr::null_mut()
+    }
 }
 
 #[no_mangle]
@@ -19,7 +22,10 @@ pub unsafe extern "C" fn discovery_by_port_name(port_name : *const u8, port_name
     let port_name = unsafe {
         std::str::from_utf8(std::slice::from_raw_parts(port_name, port_name_len)).unwrap()
     };
-    Box::into_raw(Box::new(Discovery::from_port_name(port_name).unwrap()))
+    match Discovery::from_port_name(port_name) {
+        Ok(discovery) => Box::into_raw(Box::new(discovery)),
+        Err(_) => std::ptr::null_mut()
+    }
 }
 
 #[no_mangle]
@@ -27,12 +33,18 @@ pub unsafe extern "C" fn discovery_by_serial_number(serial_number : *const u8, s
     let serial_number = unsafe {
         std::str::from_utf8(std::slice::from_raw_parts(serial_number, serial_number_len)).unwrap()
     };
-    Box::into_raw(Box::new(Discovery::new(None, Some(serial_number)).unwrap()))
+    match Discovery::new(None, Some(serial_number)) {
+        Ok(discovery) => Box::into_raw(Box::new(discovery)),
+        Err(_) => std::ptr::null_mut()
+    }
 }
 
 #[no_mangle]
-pub extern "C" fn discovery_set_wavelength(discovery : *mut Discovery, wavelength : f32) {
-    unsafe {discovery.as_mut().unwrap().set_wavelength(wavelength).unwrap()}
+pub extern "C" fn discovery_set_wavelength(discovery : *mut Discovery, wavelength : f32) -> i32 {
+    unsafe {match discovery.as_mut().unwrap().set_wavelength(wavelength) {
+        Ok(()) => 0,
+        Err(_) => -1,
+    }}
 }
 
 #[no_mangle]
@@ -51,8 +63,11 @@ pub extern "C" fn discovery_get_power_fixed(discovery : *mut Discovery) -> f32 {
 }
 
 #[no_mangle]
-pub extern "C" fn discovery_set_gdd(discovery : *mut Discovery, gdd : f32) {
-    unsafe {(*discovery).set_gdd(gdd).unwrap()}
+pub extern "C" fn discovery_set_gdd(discovery : *mut Discovery, gdd : f32) -> i32 {
+    unsafe {match (*discovery).set_gdd(gdd) {
+        Ok(()) => 0,
+        Err(_) => -1,
+    }}
 }
 
 #[no_mangle]
@@ -61,8 +76,11 @@ pub extern "C" fn discovery_get_gdd(discovery : *mut Discovery) -> f32 {
 }
 
 #[no_mangle]
-pub extern "C" fn discovery_set_alignment_variable(discovery : *mut Discovery, alignment : bool) {
-    unsafe {(*discovery).set_alignment_mode(laser::DiscoveryLaser::VariableWavelength, alignment).unwrap()}
+pub extern "C" fn discovery_set_alignment_variable(discovery : *mut Discovery, alignment : bool) -> i32 {
+    unsafe {match (*discovery).set_alignment_mode(laser::DiscoveryLaser::VariableWavelength, alignment) {
+        Ok(()) => 0,
+        Err(_) => -1,
+    }}
 }
 
 #[no_mangle]
@@ -71,8 +89,11 @@ pub extern "C" fn discovery_get_alignment_variable(discovery : *mut Discovery) -
 }
 
 #[no_mangle]
-pub extern "C" fn discovery_set_alignment_fixed(discovery : *mut Discovery, alignment : bool) {
-    unsafe {(*discovery).set_alignment_mode(laser::DiscoveryLaser::FixedWavelength, alignment).unwrap()}
+pub extern "C" fn discovery_set_alignment_fixed(discovery : *mut Discovery, alignment : bool) -> i32 {
+    unsafe {match (*discovery).set_alignment_mode(laser::DiscoveryLaser::FixedWavelength, alignment) {
+        Ok(()) => 0,
+        Err(_) => -1,
+    }}
 }
 
 #[no_mangle]
