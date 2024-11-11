@@ -186,14 +186,17 @@ cargo build --release --all
 ```
 and then compiling, in this example on Windows (note that you need to use the right architecture,
 so either modify your `target` in `cargo build` or use the `x64 Native` command line on Windows!)
+
 Ubuntu:
-TODO
+```
+g++ ./c/example.cpp -o example.a -lcoherent_rs_c -L./target/release
+```
 
 Windows:
 ```
 cl /I ./c ./c/example.cpp /link target\release\coherent_rs_c.dll.lib
 ```
 
-Then copy the `coherent_rs.dll` from `.\target\release` to the main directory
-(or alternatively, add the dll location to your `PATH`) and you can run
+Then copy the `coherent_rs_c.dll` (Windows) or `coherent_rs_c.so` from `.\target\release`
+to the main directory (or alternatively, add the dll location to your `PATH`) and you can run
 `example.exe`!
