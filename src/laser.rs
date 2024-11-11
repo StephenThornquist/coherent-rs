@@ -234,7 +234,7 @@ pub trait Laser: Sized {
     fn find_first() -> Result<Self, CoherentError> {
         let port_info = serialport::available_ports().unwrap().into_iter().filter(|port| {
             Self::is_valid_device(port)
-        }).next().ok_or(CoherentError::UnrecognizedDevice)?;
+        }).next().ok_or(CoherentError::NoRecognizedLasers)?;
         Self::from_port_info(&port_info)
     }
 

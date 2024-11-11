@@ -21,6 +21,7 @@ pub enum CoherentError {
     InvalidArgumentsError(String),
     InvalidResponseError(String),
     LaserUnavailableError,
+    NoRecognizedLasers,
     UnrecognizedDevice,
 }
 
@@ -102,6 +103,17 @@ mod tests {
         println!{"Returned : {:?} (supposed to be unrecognized)", not_discovery}
 
         let discovery = Discovery::find_first();
+        if discovery.is_err() {
+            match discovery.err().unwrap() {
+                CoherentError::NoRecognizedLasers => {
+                    println!("No recognized lasers found");
+                    return;
+                },
+                _ => {
+                    panic!("Unexpected error");
+                }
+            }
+        }
         assert!(discovery.is_ok());
         let mut discovery = discovery.unwrap();
         println!("{:?}", discovery);
@@ -142,6 +154,17 @@ mod tests {
         println!{"Returned : {:?} (supposed to be unrecognized)", not_discovery}
 
         let discovery = Discovery::find_first();
+        if discovery.is_err() {
+            match discovery.err().unwrap() {
+                CoherentError::NoRecognizedLasers => {
+                    println!("No recognized lasers found");
+                    return;
+                },
+                _ => {
+                    panic!("Unexpected error");
+                }
+            }
+        }
         assert!(discovery.is_ok());
         let mut discovery = discovery.unwrap();
         println!("{:?}", discovery);
