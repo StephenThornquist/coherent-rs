@@ -180,9 +180,9 @@ int main() {
 
 ```
 
-This can be executed by first building the crate:
+This can be executed by first building the main crate and its C wrapper:
 ```
-cargo build --release
+cargo build --release --all
 ```
 and then compiling, in this example on Windows (note that you need to use the right architecture,
 so either modify your `target` in `cargo build` or use the `x64 Native` command line on Windows!)
