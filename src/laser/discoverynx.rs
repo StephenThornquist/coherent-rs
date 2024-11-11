@@ -7,6 +7,8 @@ use std::io::{Write, BufRead};
 use crate::{CoherentError, Laser};
 use crate::laser::{LaserCommand, Query, LaserState, ShutterState, LaserType, TuningStatus};
 
+const SERIAL_PATIENCE : u64 = 100;
+
 const BAUDRATE : u32 = 19200;
 const DATABITS : serialport::DataBits = serialport::DataBits::Eight;
 const STOPBITS : serialport::StopBits = serialport::StopBits::One;
@@ -361,35 +363,46 @@ impl Laser for Discovery {
             .data_bits(DATABITS)
             .stop_bits(STOPBITS)
             .parity(PARITY)
-            .timeout(std::time::Duration::from_secs(1))
+            .timeout(std::time::Duration::from_secs(2))
             .open().unwrap();
+
+        serial_port.clear(serialport::ClearBuffer::Input)
+            .map_err(|e| CoherentError::SerialError(e))?;
 
         // First check if Echo is on
         serial_port.write_all("?E\r\n".to_string().as_bytes()).map_err(
             |e| CoherentError::WriteError(e)
         )?;
         serial_port.flush().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(SERIAL_PATIENCE));
+
+        // Read the result
         let mut buf = String::new();
         let mut reader = std::io::BufReader::new(&mut serial_port);
         reader.read_line(&mut buf)
             .map_err(|_| CoherentError::InvalidResponseError("Error reading line".to_string()))?;
-        let echo_on = buf.contains("E 1");
+        println!("Echo : {:?}", buf);
+        let echo_on = buf.contains("E 1\r\n");
         let prompt_on = buf.contains("Chameleon");
         if !buf.contains("\r\n") { return Err(CoherentError::InvalidResponseError(buf)); }
 
+        // Get the serial number
         serial_port.write_all(
             "?SN\r\n".to_string().as_bytes()
         ).map_err(|e| CoherentError::WriteError(e))?;
         serial_port.flush().map_err(|e| CoherentError::WriteError(e))?;
 
+        std::thread::sleep(std::time::Duration::from_millis(SERIAL_PATIENCE));
+
         let mut buf = String::new();
         let mut reader = std::io::BufReader::new(&mut serial_port);
         reader.read_line(&mut buf)
             .map_err(|_| CoherentError::InvalidResponseError("Error reading line".to_string()))?;
         if !buf.contains("\r\n") { return Err(CoherentError::InvalidResponseError(buf)); }
 
-        println!("Current buffer : {:?}", buf);
-        let serial_num = buf.split("SN ").collect::<Vec<&str>>()[1].trim();
+        let serial_num : &str;
+        if echo_on { serial_num = buf.split("?SN ").collect::<Vec<&str>>()[1].trim(); }
+        else { serial_num = buf.trim(); }
         
         // serial_port.clear(serialport::ClearBuffer::All)
         //     .map_err(|e| CoherentError::SerialError(e))?; 
@@ -403,11 +416,30 @@ impl Laser for Discovery {
         })
     }
 
-
+    /// Interface for sending a command to change laser settings.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `command` - The command to send to the laser.
+    /// 
+    /// # Returns
+    /// 
+    /// A `Result` containing the result of the command (nothing if successful).
+    /// 
+    /// # Example
+    /// 
+    /// ```no_run
+    /// let mut discovery = Discovery::find_first().unwrap();
+    /// discovery.send_command(
+    ///     DiscoveryNXCommands::Shutter(
+    ///         (DiscoveryLaser::VariableWavelength, ShutterState::Closed)
+    ///      )
+    /// ).unwrap();
+    /// ```
     fn send_command(&mut self, command : DiscoveryNXCommands) -> Result<(), CoherentError> {
         let command_str = command.to_string();
         self.send_serial_command(&command_str)?;
-        
+        std::thread::sleep(std::time::Duration::from_millis(SERIAL_PATIENCE));
         // Confirm the echo
         let mut buf = String::new();
         let mut reader = std::io::BufReader::new(&mut self.port);
@@ -468,6 +500,7 @@ impl Laser for Discovery {
         self.send_serial_command(&query_str)?;
         self.port.flush()
             .map_err(|e| CoherentError::InvalidResponseError(e.to_string()))?;
+        std::thread::sleep(std::time::Duration::from_millis(SERIAL_PATIENCE));
         let mut buf = String::new();
         let mut reader = std::io::BufReader::new(&mut self.port);
         reader.read_line(&mut buf)
