@@ -3,12 +3,12 @@
 //! This module contains the `Laser` trait and associated types for interacting with Coherent lasers.
 
 use serialport;
-use crate::{get_all_coherent_devices, CoherentError};
+use crate::CoherentError;
 
 #[allow(non_snake_case)]
-pub mod DiscoveryNX;
+pub mod discoverynx;
 
-pub use DiscoveryNX::{Discovery, DiscoveryNXCommands, DiscoveryNXQueries, DiscoveryLaser};
+pub use discoverynx::{Discovery, DiscoveryNXCommands, DiscoveryNXQueries, DiscoveryLaser};
 
 /// The Coherent laser models currently supported by this library.
 #[derive(Debug, PartialEq)]
@@ -189,7 +189,21 @@ pub trait Laser: Sized {
             }
             None => {
                 match serial_number {
-                    Some(serial) => Err(CoherentError::UnrecognizedDevice),
+                    Some(serial) => {
+                        let port_info = serialport::available_ports().unwrap().into_iter().filter(|port| {
+                            Self::is_valid_device(port)
+                        }).next().ok_or(CoherentError::UnrecognizedDevice)?;
+                        match &port_info.port_type {
+                            serialport::SerialPortType::UsbPort(info) => {
+                                if info.serial_number == Some(serial.to_string()) {
+                                    Ok(Self::from_port_info(&port_info))
+                                } else {
+                                    Err(CoherentError::UnrecognizedDevice)
+                                }
+                            },
+                            _ => Err(CoherentError::UnrecognizedDevice)
+                        }
+                    },
                     None => Self::find_first()
                 }
             }

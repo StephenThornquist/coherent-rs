@@ -191,7 +191,7 @@ TODO
 
 Windows:
 ```
-cl /I ./c ./c/example.cpp /link target\release\coherent_rs.dll.lib
+cl /I ./c ./c/example.cpp /link target\release\coherent_rs_c.dll.lib
 ```
 
 Then copy the `coherent_rs.dll` from `.\target\release` to the main directory

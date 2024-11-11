@@ -6,7 +6,7 @@
 use serialport;
 pub mod laser;
 use laser::Laser;
-pub use laser::{DiscoveryNX, DiscoveryNXCommands, DiscoveryNXQueries};
+pub use laser::{discoverynx, DiscoveryNXCommands, DiscoveryNXQueries};
 pub use laser::Discovery;
 
 const COHERENT_VENDOR_ID : u16 = 3405;

@@ -28,6 +28,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "coherent-rs-c"
+version = "0.1.0"
+dependencies = [
+ "coherent-rs",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
