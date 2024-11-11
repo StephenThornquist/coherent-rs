@@ -356,7 +356,7 @@ impl Laser for Discovery {
     /// 
     /// let discovery = DiscoveryNX::from_port_info(&port_info);
     /// ```
-    fn from_port_info(serialportinfo : &serialport::SerialPortInfo)-> Self {
+    fn from_port_info(serialportinfo : &serialport::SerialPortInfo)-> Result<Self, CoherentError> {
         let mut serial_port = serialport::new(&serialportinfo.port_name, BAUDRATE)
             .data_bits(DATABITS)
             .stop_bits(STOPBITS)
@@ -365,25 +365,42 @@ impl Laser for Discovery {
             .open().unwrap();
 
         // First check if Echo is on
-        serial_port.write_all("?E\r\n".to_string().as_bytes()).unwrap();
+        serial_port.write_all("?E\r\n".to_string().as_bytes()).map_err(
+            |e| CoherentError::WriteError(e)
+        )?;
         serial_port.flush().unwrap();
         let mut buf = String::new();
         let mut reader = std::io::BufReader::new(&mut serial_port);
-        reader.read_line(&mut buf).unwrap();
-        let (echo_on, prompt_on) = match buf.as_str() {
-            "?E 1\r\n" => (true, false),
-            "0\r\n" => (false, false),
-            "Chameleon> ?E 1\r\n" => (true, true),
-            "Chameleon> 0\r\n" => (false, true),
-            _ => {panic!("Invalid response to echo query : {}", buf);}
-        };
+        reader.read_line(&mut buf)
+            .map_err(|_| CoherentError::InvalidResponseError("Error reading line".to_string()))?;
+        let echo_on = buf.contains("E 1");
+        let prompt_on = buf.contains("Chameleon");
+        if !buf.contains("\r\n") { return Err(CoherentError::InvalidResponseError(buf)); }
 
-        Discovery{
+        serial_port.write_all(
+            "?SN\r\n".to_string().as_bytes()
+        ).map_err(|e| CoherentError::WriteError(e))?;
+        serial_port.flush().map_err(|e| CoherentError::WriteError(e))?;
+
+        let mut buf = String::new();
+        let mut reader = std::io::BufReader::new(&mut serial_port);
+        reader.read_line(&mut buf)
+            .map_err(|_| CoherentError::InvalidResponseError("Error reading line".to_string()))?;
+        if !buf.contains("\r\n") { return Err(CoherentError::InvalidResponseError(buf)); }
+
+        println!("Current buffer : {:?}", buf);
+        let serial_num = buf.split("SN ").collect::<Vec<&str>>()[1].trim();
+        
+        // serial_port.clear(serialport::ClearBuffer::All)
+        //     .map_err(|e| CoherentError::SerialError(e))?; 
+
+
+        Ok(Discovery{
             port : serial_port,
-            serial_number : String::new(),
+            serial_number : serial_num.to_string(),
             echo : echo_on,
             _prompt : prompt_on,
-        }
+        })
     }
 
 
@@ -394,10 +411,12 @@ impl Laser for Discovery {
         // Confirm the echo
         let mut buf = String::new();
         let mut reader = std::io::BufReader::new(&mut self.port);
-        reader.read_line(&mut buf).map_err(|_| CoherentError::InvalidResponseError("Error reading line".to_string()))?;
+        reader.read_line(&mut buf)
+            .map_err(|_| CoherentError::InvalidResponseError("Error reading line".to_string()))?;
         if buf.contains("COMMAND NOT EXECUTED") {
             return Err(CoherentError::CommandNotExecutedError);
         }
+        if self._prompt {buf = buf.split("Chameleon>").collect::<Vec<&str>>()[1].to_string();}
         if self.echo {
             let split_on_command = buf.split(&(command_str.clone()+" ")).collect::<Vec<&str>>();
             if split_on_command.len() != 2 {
@@ -447,10 +466,13 @@ impl Laser for Discovery {
     fn query<Q:Query>(&mut self, query : Q) -> Result<Q::Result, CoherentError> {
         let query_str = query.to_string();
         self.send_serial_command(&query_str)?;
-        self.port.flush().map_err(|e| CoherentError::InvalidResponseError(e.to_string()))?;
+        self.port.flush()
+            .map_err(|e| CoherentError::InvalidResponseError(e.to_string()))?;
         let mut buf = String::new();
         let mut reader = std::io::BufReader::new(&mut self.port);
-        reader.read_line(&mut buf).map_err(|_| CoherentError::InvalidResponseError("Error reading line".to_string()))?;
+        reader.read_line(&mut buf)
+            .map_err(|_| CoherentError::InvalidResponseError("Error reading line".to_string()))?;
+        if self._prompt {buf = buf.split("Chameleon>").collect::<Vec<&str>>()[1].to_string();}
         let buf : Vec<&str> = buf.trim().split(&(query_str+" ")).collect();
         let buf = match self.echo {
             false => buf[0],

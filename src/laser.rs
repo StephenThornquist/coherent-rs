@@ -176,7 +176,7 @@ pub trait Laser: Sized {
                         match &port_info.port_type {
                             serialport::SerialPortType::UsbPort(info) => {
                                 if info.serial_number == Some(serial.to_string()) {
-                                    Ok(Self::from_port_info(&port_info))
+                                    Self::from_port_info(&port_info)
                                 } else {
                                     Err(CoherentError::UnrecognizedDevice)
                                 }
@@ -184,7 +184,7 @@ pub trait Laser: Sized {
                             _ => Err(CoherentError::UnrecognizedDevice)
                         }
                     },
-                    None => Ok(Self::from_port_info(&port_info))
+                    None => Self::from_port_info(&port_info)
                 }
             }
             None => {
@@ -196,7 +196,7 @@ pub trait Laser: Sized {
                         match &port_info.port_type {
                             serialport::SerialPortType::UsbPort(info) => {
                                 if info.serial_number == Some(serial.to_string()) {
-                                    Ok(Self::from_port_info(&port_info))
+                                    Self::from_port_info(&port_info)
                                 } else {
                                     Err(CoherentError::UnrecognizedDevice)
                                 }
@@ -220,14 +220,14 @@ pub trait Laser: Sized {
 
     /// Create a new instance of the laser from a `SerialPortInfo` object
     /// specifying where to access the laser.
-    fn from_port_info(serialportinfo : &serialport::SerialPortInfo) -> Self;
+    fn from_port_info(serialportinfo : &serialport::SerialPortInfo) -> Result<Self, CoherentError>;
     
     /// Create a new instance of the laser from a port name.
     fn from_port_name(port_name : &str) -> Result<Self, CoherentError> {
         let port_info = serialport::available_ports().unwrap().into_iter().filter(|port| {
             port.port_name == port_name
         }).next().ok_or(CoherentError::UnrecognizedDevice)?;
-        Ok(Self::from_port_info(&port_info))
+        Self::from_port_info(&port_info)
     }
 
     /// Find the first instance of a laser of the class on any available port.
@@ -235,7 +235,7 @@ pub trait Laser: Sized {
         let port_info = serialport::available_ports().unwrap().into_iter().filter(|port| {
             Self::is_valid_device(port)
         }).next().ok_or(CoherentError::UnrecognizedDevice)?;
-        Ok(Self::from_port_info(&port_info))
+        Self::from_port_info(&port_info)
     }
 
     /// Send a command to the laser that doesn't expect a response

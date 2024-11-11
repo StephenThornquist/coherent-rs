@@ -99,7 +99,7 @@ mod tests {
 
         let not_discovery = open::<Discovery>("NotAPort");
         assert!(not_discovery.is_err());
-        println!{"Returned : {:?}", not_discovery}
+        println!{"Returned : {:?} (supposed to be unrecognized)", not_discovery}
 
         let discovery = Discovery::find_first();
         assert!(discovery.is_ok());
@@ -139,7 +139,7 @@ mod tests {
 
         let not_discovery = open::<Discovery>("NotAPort");
         assert!(not_discovery.is_err());
-        println!{"Returned : {:?}", not_discovery}
+        println!{"Returned : {:?} (supposed to be unrecognized)", not_discovery}
 
         let discovery = Discovery::find_first();
         assert!(discovery.is_ok());
