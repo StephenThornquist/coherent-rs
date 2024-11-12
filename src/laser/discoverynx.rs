@@ -579,6 +579,39 @@ impl Discovery {
     pub fn get_serial(&mut self) -> Result<String, CoherentError> {
         self.query(DiscoveryNXQueries::Serial{})
     }
+
+    pub fn set_to_standby(&mut self, standby : bool) -> Result<(), CoherentError> {
+        self.send_command(DiscoveryNXCommands::Laser(if standby {LaserState::Standby} else {LaserState::On}))
+    }
+
+    pub fn get_standby(&mut self) -> Result<LaserState, CoherentError> {
+        self.query(DiscoveryNXQueries::Laser{})
+    }
+
+    pub fn get_keyswitch_on(&mut self) -> Result<bool, CoherentError> {
+        self.query(DiscoveryNXQueries::Keyswitch{})
+    }
+
+    pub fn get_status(&mut self) -> Result<String, CoherentError> {
+        self.query(DiscoveryNXQueries::Status{})
+    }
+
+    pub fn clear_faults(&mut self) -> Result<(), CoherentError> {
+        self.send_command(DiscoveryNXCommands::FaultClear)
+    }
+
+    pub fn get_faults(&mut self) -> Result<u8, CoherentError> {
+        self.query(DiscoveryNXQueries::Faults{})
+    }
+
+    pub fn get_fault_text(&mut self) -> Result<String, CoherentError> {
+        self.query(DiscoveryNXQueries::FaultText{})
+    }
+
+    pub fn get_tuning(&mut self) -> Result<TuningStatus, CoherentError> {
+        self.query(DiscoveryNXQueries::Tuning{})
+    }
+    
 }
 
 #[cfg(test)]
@@ -799,6 +832,8 @@ mod tests {
 
         let new_gdd = discovery.get_gdd().unwrap();
         println!("New GDD: {:?}", new_gdd);
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
 
         discovery.set_gdd(current_gdd).map_err(
             |e| {match e {

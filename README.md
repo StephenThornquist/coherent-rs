@@ -141,7 +141,8 @@ This tool was developed in `Rust` to make it behave smoothly and easily across
 platforms, but an expected use case is calling this code from `C` (e.g. to implement
 a `ROS2` node controlling a laser, or to integrate into legacy `C`-based microscope control).
 This crate exposes a limited C ABI to retrieve a pointer to and from the lasers implemented inside
-and call and set specific functions. A simple example script is in `c/example.cpp`.
+and call and set specific functions. A slightly more thorough example script is in `c/example.cpp`,
+but here's a simple readable version
 
 ```c
 /*
@@ -182,7 +183,7 @@ int main() {
 
 This can be executed by first building the main crate and its C wrapper:
 ```
-cargo build --release --all
+cargo build --release --workspace
 ```
 and then compiling, in this example on Windows (note that you need to use the right architecture,
 so either modify your `target` in `cargo build` or use the `x64 Native` command line on Windows!)
