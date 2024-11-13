@@ -131,17 +131,19 @@ mod tests {
         println!{"Fixed wavelength beam power : {:?}", fixed_wavelength_power.unwrap()}
 
         discovery.send_command(
-            DiscoveryNXCommands::Shutter(
-                (DiscoveryLaser::FixedWavelength, laser::ShutterState::Open)
-            )
+            DiscoveryNXCommands::Shutter{
+                laser : DiscoveryLaser::FixedWavelength,
+                state: laser::ShutterState::Open
+            }
         ).unwrap();
 
         std::thread::sleep(std::time::Duration::from_millis(300));
 
         discovery.send_command(
-            DiscoveryNXCommands::Shutter(
-                (DiscoveryLaser::FixedWavelength, laser::ShutterState::Closed)
-            )
+            DiscoveryNXCommands::Shutter{
+                laser : DiscoveryLaser::FixedWavelength,
+                state : laser::ShutterState::Closed
+            }
         ).unwrap();
     }
 

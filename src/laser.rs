@@ -5,7 +5,6 @@
 use serialport;
 use crate::CoherentError;
 
-#[allow(non_snake_case)]
 pub mod discoverynx;
 
 pub use discoverynx::{Discovery, DiscoveryNXCommands, DiscoveryNXQueries, DiscoveryLaser};

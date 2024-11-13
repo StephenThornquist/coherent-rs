@@ -29,43 +29,44 @@ pub enum DiscoveryLaser {
     FixedWavelength,
 }
 
+/// Commands to change parameters of the DiscoveryNX
 pub enum DiscoveryNXCommands {
-    Echo(bool), // Sets whether or not the laser will echo commands
-    Laser(LaserState), // Set the laser to standby
-    Shutter((DiscoveryLaser, ShutterState)), // Open or close the shutter
+    Echo{echo_on : bool}, // Sets whether or not the laser will echo commands
+    Laser{state : LaserState}, // Set the laser to standby
+    Shutter{laser : DiscoveryLaser, state: ShutterState}, // Open or close the shutter
     FaultClear, // Clear any faults
-    AlignmentMode((DiscoveryLaser, bool)), // Set the laser to alignment mode
-    Wavelength(f32), // Set the wavelength
+    AlignmentMode{laser : DiscoveryLaser, alignment_mode_on : bool}, // Set the laser to alignment mode
+    Wavelength{wavelength_nm : f32}, // Set the wavelength
     Heartbeat,
-    GddCurve(u8), // Set the GDD calibration curve
-    GddCurveN(String), // Set the GDD calibration curve by name
-    Gdd(f32),
-    SetCurveN(String), // Sets name of current calibration curve
+    GddCurve{curve_num : u8}, // Set the GDD calibration curve
+    GddCurveN{curve_name : String}, // Set the GDD calibration curve by name
+    Gdd{gdd_val : f32},
+    SetCurveN{new_curve_name : String}, // Sets name of current calibration curve
 }
 
 impl LaserCommand for DiscoveryNXCommands {
     fn to_string(&self) -> String {
         match &self {
-            DiscoveryNXCommands::Echo(echo) => format!("E={}", if *echo {"1"} else {"0"}),
-            DiscoveryNXCommands::Laser(state) => format!("L={}", match state {
+            DiscoveryNXCommands::Echo{echo_on : echo} => format!("E={}", if *echo {"1"} else {"0"}),
+            DiscoveryNXCommands::Laser{state} => format!("L={}", match state {
                 LaserState::Standby => "0",
                 LaserState::On => "1",
             }),
             DiscoveryNXCommands::FaultClear => String::from("FC"),
-            DiscoveryNXCommands::AlignmentMode((laser, mode)) => match laser {
+            DiscoveryNXCommands::AlignmentMode{laser : laser, alignment_mode_on : mode} => match laser {
                 DiscoveryLaser::VariableWavelength => format!("ALIGN={}", if *mode {"1"} else {"0"}),
                 DiscoveryLaser::FixedWavelength => format!("ALIGNFIXED={}", if *mode {"1"} else {"0"}),
             },
-            DiscoveryNXCommands::Shutter((laser, state)) => match laser {
+            DiscoveryNXCommands::Shutter{laser : laser, state : state} => match laser {
                 DiscoveryLaser::VariableWavelength => format!("S={}", if *state == ShutterState::Open {"1"} else {"0"}),
                 DiscoveryLaser::FixedWavelength => format!("SFIXED={}", if *state == ShutterState::Open {"1"} else {"0"}),
             },
-            DiscoveryNXCommands::Wavelength(wavelength) => format!("WV={}", wavelength),
+            DiscoveryNXCommands::Wavelength{wavelength_nm : wavelength} => format!("WV={}", wavelength),
             DiscoveryNXCommands::Heartbeat => String::from("HB"),
-            DiscoveryNXCommands::GddCurve(curve) => format!("GDD={}", curve),
-            DiscoveryNXCommands::GddCurveN(name) => format!("GDDCURVEN={}", name),
-            DiscoveryNXCommands::Gdd(gdd) => format!("GDD={}", gdd),
-            DiscoveryNXCommands::SetCurveN(name) => format!("SETCURVEN={}", name),
+            DiscoveryNXCommands::GddCurve{curve_num : curve} => format!("GDD={}", curve),
+            DiscoveryNXCommands::GddCurveN{curve_name : name} => format!("GDDCURVEN={}", name),
+            DiscoveryNXCommands::Gdd{gdd_val : gdd} => format!("GDD={}", gdd),
+            DiscoveryNXCommands::SetCurveN{new_curve_name : name} => format!("SETCURVEN={}", name),
         }
     }
 }
@@ -525,7 +526,7 @@ impl Discovery {
     /// discovery.set_wavelength(840.0).unwrap();
     /// ```
     pub fn set_wavelength(&mut self, wavelength : f32) -> Result<(), CoherentError> {
-        self.send_command(DiscoveryNXCommands::Wavelength(wavelength))
+        self.send_command(DiscoveryNXCommands::Wavelength{wavelength_nm : wavelength})
     }
 
     pub fn get_wavelength(&mut self) -> Result<f32, CoherentError> {
@@ -533,7 +534,7 @@ impl Discovery {
     }
 
     pub fn set_gdd(&mut self, gdd : f32) -> Result<(), CoherentError> {
-        self.send_command(DiscoveryNXCommands::Gdd(gdd))
+        self.send_command(DiscoveryNXCommands::Gdd{gdd_val : gdd})
     }
 
     pub fn get_gdd(&mut self) -> Result<f32, CoherentError> {
@@ -541,7 +542,7 @@ impl Discovery {
     }
 
     pub fn set_shutter(&mut self, laser : DiscoveryLaser, state : ShutterState) -> Result<(), CoherentError> {
-        self.send_command(DiscoveryNXCommands::Shutter((laser, state)))
+        self.send_command(DiscoveryNXCommands::Shutter{laser, state})
     }
 
     pub fn get_shutter(&mut self, laser : DiscoveryLaser) -> Result<ShutterState, CoherentError> {
@@ -549,7 +550,7 @@ impl Discovery {
     }
 
     pub fn set_gdd_curve(&mut self, curve : u8) -> Result<(), CoherentError> {
-        self.send_command(DiscoveryNXCommands::GddCurve(curve))
+        self.send_command(DiscoveryNXCommands::GddCurve{curve_num : curve})
     }
 
     pub fn get_gdd_curve(&mut self) -> Result<i32, CoherentError> {
@@ -557,7 +558,7 @@ impl Discovery {
     }
 
     pub fn set_gdd_curve_n(&mut self, name : &str) -> Result<(), CoherentError> {
-        self.send_command(DiscoveryNXCommands::GddCurveN(name.to_string()))
+        self.send_command(DiscoveryNXCommands::GddCurveN{curve_name : name.to_string()})
     }
 
     pub fn get_gdd_curve_n(&mut self) -> Result<String, CoherentError> {
@@ -565,7 +566,7 @@ impl Discovery {
     }
     
     pub fn set_alignment_mode(&mut self, laser : DiscoveryLaser, mode : bool) -> Result<(), CoherentError> {
-        self.send_command(DiscoveryNXCommands::AlignmentMode((laser, mode)))
+        self.send_command(DiscoveryNXCommands::AlignmentMode{laser, alignment_mode_on : mode})
     }
 
     pub fn get_alignment_mode(&mut self, laser : DiscoveryLaser) -> Result<bool, CoherentError> {
@@ -581,7 +582,9 @@ impl Discovery {
     }
 
     pub fn set_to_standby(&mut self, standby : bool) -> Result<(), CoherentError> {
-        self.send_command(DiscoveryNXCommands::Laser(if standby {LaserState::Standby} else {LaserState::On}))
+        self.send_command(
+            DiscoveryNXCommands::Laser{state : if standby {LaserState::Standby} else {LaserState::On}}
+        )
     }
 
     pub fn get_standby(&mut self) -> Result<LaserState, CoherentError> {
@@ -623,7 +626,9 @@ mod tests {
         let mut discovery = Discovery::find_first().unwrap();
 
         discovery.send_command(
-            DiscoveryNXCommands::Shutter((DiscoveryLaser::VariableWavelength, ShutterState::Open))
+            DiscoveryNXCommands::Shutter{
+                laser: DiscoveryLaser::VariableWavelength,
+                state: ShutterState::Open}
         ).unwrap();
     }
     
@@ -668,11 +673,12 @@ mod tests {
         println!("Variable shutter state: {:?}... setting to {:?}", shutter_state, !shutter_state);
 
         discovery.send_command(
-            DiscoveryNXCommands::Shutter((
-                DiscoveryLaser::VariableWavelength,
-                !shutter_state
-            ))
-        ).unwrap();
+            DiscoveryNXCommands::Shutter{
+                laser : DiscoveryLaser::VariableWavelength,
+                state : !shutter_state
+            }
+        )
+        .unwrap();
 
         thread::sleep(std::time::Duration::from_millis(300));
 
@@ -687,10 +693,10 @@ mod tests {
         println!("Variable shutter state: {:?}... setting to {:?}", shutter_state, !shutter_state);
 
         discovery.send_command(
-            DiscoveryNXCommands::Shutter((
-                DiscoveryLaser::VariableWavelength,
-                !shutter_state
-            ))
+            DiscoveryNXCommands::Shutter{
+                laser : DiscoveryLaser::VariableWavelength,
+                state : !shutter_state
+            }
         ).unwrap();
 
         thread::sleep(std::time::Duration::from_millis(300));
@@ -715,7 +721,7 @@ mod tests {
         println!("Wavelength: {:?}", wv);
 
         discovery.send_command(
-            DiscoveryNXCommands::Wavelength(840.0)
+            DiscoveryNXCommands::Wavelength{wavelength_nm : 840.0}
         ).unwrap();
 
         while discovery.query(DiscoveryNXQueries::Tuning{}).unwrap().into() {
@@ -733,7 +739,7 @@ mod tests {
         println!("Wavelength: {:?}", new_wv);
 
         discovery.send_command(
-            DiscoveryNXCommands::Wavelength(wv)
+            DiscoveryNXCommands::Wavelength{wavelength_nm : wv}
         ).unwrap();
 
         while discovery.query(DiscoveryNXQueries::Tuning{}).unwrap().into() {
@@ -759,7 +765,7 @@ mod tests {
         println!("Testing invalid wavelength");
 
         let result = discovery.send_command(
-            DiscoveryNXCommands::Wavelength(0.0)
+            DiscoveryNXCommands::Wavelength{wavelength_nm : 0.0}
         );
 
         assert!(result.is_err());
@@ -773,7 +779,7 @@ mod tests {
         println!("Testing invalid GDD");
 
         let result = discovery.send_command(
-            DiscoveryNXCommands::Gdd(50000.0)
+            DiscoveryNXCommands::Gdd{gdd_val : 50000.0}
         );
 
         assert!(result.is_err());
@@ -799,7 +805,7 @@ mod tests {
         println!("GDD: {:?}... Setting to 0", current_gdd);
 
         discovery.send_command(
-            DiscoveryNXCommands::Gdd(0.0)
+            DiscoveryNXCommands::Gdd{gdd_val : 0.0}
         ).unwrap();
 
         let new_gdd = discovery.query(
@@ -809,7 +815,7 @@ mod tests {
         println!("New GDD: {:?}", new_gdd);
 
         discovery.send_command(
-            DiscoveryNXCommands::Gdd(current_gdd)
+            DiscoveryNXCommands::Gdd{gdd_val : current_gdd}
         ).unwrap();
 
         let new_gdd = discovery.query(

@@ -97,18 +97,19 @@ println!{"Fixed wavelength beam power : {:?}", fixed_wavelength_power.unwrap()}
 
 // Now use a Command to open and close the shutter.
 discovery.send_command(
-    DiscoveryNXCommands::Shutter(
-        (DiscoveryLaser::FixedWavelength, laser::ShutterState::Open)
-    )
+    DiscoveryNXCommands::Shutter{
+        laser : DiscoveryLaser::FixedWavelength, state : laser::ShutterState::Open
+    }
 ).unwrap();
 
 // The laser ignores subsequent shutter commands for a few hundred milliseconds...
 std::thread::sleep(std::time::Duration::from_millis(300));
 
 discovery.send_command(
-    DiscoveryNXCommands::Shutter(
-        (DiscoveryLaser::FixedWavelength, laser::ShutterState::Closed)
-    )
+    DiscoveryNXCommands::Shutter
+        {laser : DiscoveryLaser::FixedWavelength,
+        state:laser::ShutterState::Closed}
+    
 ).unwrap();
 ```
 
