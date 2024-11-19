@@ -78,6 +78,7 @@ quickly, sometimes the laser will reply with "Command not executed", which produ
 It's much more clear when you see this written out.
 
 The generic style looks as follows:
+
 ```rust
 use coherent_rs::{Discovery, DiscoveryNXQueries, DiscoveryNXCommands, DiscoveryLaser};
 
@@ -157,6 +158,15 @@ int main() {
     if (discovery == nullptr) {
         return 1;
     }
+
+    std::cout << "Device found!" << std::endl;
+    char* serial = new char[256];
+    size_t *serial_len = new size_t;
+    discovery_get_serial(discovery, serial, serial_len);
+    std::cout << "Serial: "; std::cout.write(serial, *serial_len); std::cout << std::endl;
+
+    delete[] serial; delete serial_len;
+
     float wavelength = discovery_get_wavelength(discovery);
     float power_variable = discovery_get_power_variable(discovery);
     float power_fixed = discovery_get_power_fixed(discovery);

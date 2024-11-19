@@ -472,9 +472,6 @@ impl Laser for Discovery {
 
     /// Send a query to the laser that expects a response
     /// 
-    /// TODO: Allow type inference to determine the return type
-    /// through a generic with Query
-    /// 
     /// # Arguments
     /// 
     /// * `query` - The query to send to the laser.

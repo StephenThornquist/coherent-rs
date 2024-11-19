@@ -16,10 +16,11 @@ int main() {
     char* serial = new char[256];
     size_t *serial_len = new size_t;
     discovery_get_serial(discovery, serial, serial_len);
-    std::cout << "Serial: " << serial << std::endl;
+    // Print only the `serial_len` characters of the serial number
+    std::cout << "Serial: "; std::cout.write(serial, *serial_len); std::cout << std::endl;
 
     discovery_get_status(discovery, serial, serial_len);
-    std::cout << "Status: " << serial << std::endl;
+    std::cout << "Status: "; std::cout.write(serial, *serial_len); std::cout << std::endl;
 
     discovery_get_fault_text(discovery, serial, serial_len);
     std::cout << "Fault Text: " << serial << std::endl;
