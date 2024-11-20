@@ -5,10 +5,14 @@
 use serialport;
 use crate::CoherentError;
 
+#[cfg(feature = "network")]
+use serde::{Serialize, Deserialize};
+
 pub mod discoverynx;
 
 pub use discoverynx::{Discovery, DiscoveryNXCommands, DiscoveryNXQueries, DiscoveryLaser};
 
+#[cfg_attr(feature = "network", derive(Serialize, Deserialize))]
 /// The Coherent laser models currently supported by this library.
 #[derive(Debug, PartialEq)]
 pub enum LaserType {
@@ -27,6 +31,7 @@ impl From<u16> for LaserType {
     }
 }
 
+#[cfg_attr(feature = "network", derive(Serialize, Deserialize))]
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum LaserState {
     Standby,
@@ -36,6 +41,7 @@ pub enum LaserState {
 /// The state of the laser shutter.
 /// Can be coerced from `bool` with
 /// `Open` being `true` and `Closed` being `false`.
+#[cfg_attr(feature = "network", derive(Serialize, Deserialize))]
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum ShutterState{
     Open,
@@ -64,6 +70,7 @@ impl std::ops::Not for ShutterState {
     }
 }
 
+#[cfg_attr(feature = "network", derive(Serialize, Deserialize))]
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum TuningStatus {
     Tuning,
@@ -103,7 +110,7 @@ pub trait LaserCommand {
     fn to_string(&self) -> String;
 }
 
-pub trait Query : LaserCommand {
+pub trait Query : LaserCommand + Serialize + Deserialize<'static> {
     type Result;
     fn parse_result(&self, result : &str) -> Result<Self::Result, CoherentError>;
 }
@@ -116,6 +123,10 @@ pub trait Query : LaserCommand {
 /// to request information about its state or configuration.
 pub trait Laser: Sized {
 
+    #[cfg(feature = "network")]
+    type CommandEnum : LaserCommand + Serialize + Deserialize<'static>;
+
+    #[cfg(not(feature = "network"))]
     type CommandEnum : LaserCommand;
 
     /// Create a new instance of the laser by opening a
@@ -280,5 +291,4 @@ mod tests {
             }
         }
     }
-
 }

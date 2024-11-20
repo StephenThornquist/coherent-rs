@@ -137,6 +137,19 @@ discovery.set_shutter(laser::DiscoveryLaser::FixedWavelength,
         laser::ShutterState::Closed).unwrap();
 ```
 
+## Network
+
+It's slightly frustrating that there's only one USB port on the Coherent lasers,
+because sometimes multiple systems interact with one laser. This crate also contains
+a tool for network communication with classes implementing the `Laser` trait.
+
+```rust
+use coherent_rs::{Discovery, NetworkLaser, NetworkLaserInterface};
+
+
+```
+TODO Make these!
+
 ## FFI (C API)
 
 This tool was developed in `Rust` to make it behave smoothly and easily across
@@ -160,7 +173,7 @@ int main() {
     }
 
     std::cout << "Device found!" << std::endl;
-    char* serial = new char[256];
+    char *serial = new char[256];
     size_t *serial_len = new size_t;
     discovery_get_serial(discovery, serial, serial_len);
     std::cout << "Serial: "; std::cout.write(serial, *serial_len); std::cout << std::endl;

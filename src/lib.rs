@@ -5,6 +5,9 @@
 
 use serialport;
 pub mod laser;
+#[cfg(feature = "network")]
+pub mod network;
+
 use laser::Laser;
 pub use laser::{discoverynx, DiscoveryNXCommands, DiscoveryNXQueries};
 pub use laser::Discovery;
