@@ -26,6 +26,8 @@ pub enum CoherentError {
     LaserUnavailableError,
     NoRecognizedLasers,
     UnrecognizedDevice,
+    #[cfg(feature = "network")]
+    SerializationError,
 }
 
 impl From<serialport::Error> for CoherentError {

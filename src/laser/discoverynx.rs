@@ -6,6 +6,8 @@ use std::io::{Write, BufRead};
 
 #[cfg(feature = "network")]
 use serde::{Serialize, Deserialize};
+#[cfg(feature = "network")]
+use rmp_serde::Serializer;
 
 use crate::{CoherentError, Laser};
 use crate::laser::{LaserCommand, Query, LaserState, ShutterState, LaserType, TuningStatus};
@@ -26,6 +28,18 @@ pub struct Discovery{
     _prompt : bool, // whether or not the laser will echo prompts, which affects parsing
 }
 
+impl Into<LaserType> for Discovery {
+    fn into(self) -> LaserType {
+        LaserType::DiscoveryNX
+    }
+}
+
+impl Into<LaserType> for &Discovery {
+    fn into(self) -> LaserType {
+        LaserType::DiscoveryNX
+    }
+}
+
 #[cfg_attr(feature = "network", derive(Serialize, Deserialize))]
 #[derive(Debug, PartialEq)]
 pub enum DiscoveryLaser {
@@ -35,6 +49,7 @@ pub enum DiscoveryLaser {
 
 /// Commands to change parameters of the DiscoveryNX
 #[cfg_attr(feature = "network", derive(Serialize, Deserialize))]
+#[derive(Debug, PartialEq)]
 pub enum DiscoveryNXCommands {
     Echo{echo_on : bool}, // Sets whether or not the laser will echo commands
     Laser{state : LaserState}, // Set the laser to standby
@@ -47,6 +62,28 @@ pub enum DiscoveryNXCommands {
     GddCurveN{curve_name : String}, // Set the GDD calibration curve by name
     Gdd{gdd_val : f32},
     SetCurveN{new_curve_name : String}, // Sets name of current calibration curve
+}
+
+#[cfg_attr(feature = "network", derive(Serialize, Deserialize))]
+#[derive(Debug, PartialEq)]
+pub struct DiscoveryNXStatus {
+    pub echo : bool,
+    pub laser : LaserState,
+    pub variable_shutter : ShutterState,
+    pub fixed_shutter : ShutterState,
+    pub keyswitch : bool,
+    pub faults : u8,
+    pub fault_text : String,
+    pub tuning : TuningStatus,
+    pub alignment_var : bool,
+    pub alignment_fixed : bool,
+    pub status : String,
+    pub wavelength : f32,
+    pub power_var : f32,
+    pub power_fixed : f32,
+    pub gdd_curve : i32,
+    pub gdd_curve_n : String,
+    pub gdd : f32,
 }
 
 impl LaserCommand for DiscoveryNXCommands {
@@ -76,12 +113,13 @@ impl LaserCommand for DiscoveryNXCommands {
     }
 }
 
+
 #[allow(non_snake_case)]
 pub mod DiscoveryNXQueries {
     use super::*;
 
     #[cfg_attr(feature = "network", derive(Serialize, Deserialize))]
-    #[derive(Default)]
+    #[derive(Default, Debug)]
     pub struct Echo {}
     impl LaserCommand for Echo {
         fn to_string(&self) -> String {
@@ -96,7 +134,7 @@ pub mod DiscoveryNXQueries {
     }
 
     #[cfg_attr(feature = "network", derive(Serialize, Deserialize))]
-    #[derive(Default)]
+    #[derive(Default, Debug)]
     pub struct Laser {}
     impl LaserCommand for Laser {
         fn to_string(&self) -> String {
@@ -117,6 +155,7 @@ pub mod DiscoveryNXQueries {
 
     /// Setting the shutter takes time -- recommended to sleep for ~300 ms after setting
     #[cfg_attr(feature = "network", derive(Serialize, Deserialize))]
+    #[derive(Debug)]
     pub struct Shutter {
         pub laser : DiscoveryLaser,
     }
@@ -142,6 +181,7 @@ pub mod DiscoveryNXQueries {
     }
 
     #[cfg_attr(feature = "network", derive(Serialize, Deserialize))]
+    #[derive(Default, Debug)]
     pub struct Keyswitch {}
     impl LaserCommand for Keyswitch {
         fn to_string(&self) -> String {
@@ -156,6 +196,7 @@ pub mod DiscoveryNXQueries {
     }
 
     #[cfg_attr(feature = "network", derive(Serialize, Deserialize))]
+    #[derive(Default, Debug)]
     pub struct Faults {}
     impl LaserCommand for Faults {
         fn to_string(&self) -> String {
@@ -170,6 +211,7 @@ pub mod DiscoveryNXQueries {
     }
 
     #[cfg_attr(feature = "network", derive(Serialize, Deserialize))]
+    #[derive(Default, Debug)]
     pub struct FaultText {}
     impl LaserCommand for FaultText {
         fn to_string(&self) -> String {
@@ -184,6 +226,7 @@ pub mod DiscoveryNXQueries {
     }
 
     #[cfg_attr(feature = "network", derive(Serialize, Deserialize))]
+    #[derive(Default, Debug)]
     pub struct Tuning {}
     impl LaserCommand for Tuning {
         fn to_string(&self) -> String {
@@ -202,6 +245,7 @@ pub mod DiscoveryNXQueries {
     }
 
     #[cfg_attr(feature = "network", derive(Serialize, Deserialize))]
+    #[derive(Debug)]
     pub struct AlignmentMode {
         pub laser : DiscoveryLaser,
     }
@@ -221,6 +265,7 @@ pub mod DiscoveryNXQueries {
     }
 
     #[cfg_attr(feature = "network", derive(Serialize, Deserialize))]
+    #[derive(Default, Debug)]
     pub struct Status {}
     impl LaserCommand for Status {
         fn to_string(&self) -> String {
@@ -239,6 +284,7 @@ pub mod DiscoveryNXQueries {
     /// `while laser.query(Tuning{}) {std::thread::sleep(std::time::Duration::from_millis(100));}` loop
     /// or setting other parameters while it's happening
     #[cfg_attr(feature = "network", derive(Serialize, Deserialize))]
+    #[derive(Default, Debug)]
     pub struct Wavelength {}
     impl LaserCommand for Wavelength {
         fn to_string(&self) -> String {
@@ -258,6 +304,7 @@ pub mod DiscoveryNXQueries {
     }
 
     #[cfg_attr(feature = "network", derive(Serialize, Deserialize))]
+    #[derive(Debug)]
     pub struct Power {
         pub laser : DiscoveryLaser,
     }
@@ -277,6 +324,7 @@ pub mod DiscoveryNXQueries {
     }
 
     #[cfg_attr(feature = "network", derive(Serialize, Deserialize))]
+    #[derive(Debug)]
     pub struct GddCurve {}
     impl LaserCommand for GddCurve {
         fn to_string(&self) -> String {
@@ -291,6 +339,7 @@ pub mod DiscoveryNXQueries {
     }
 
     #[cfg_attr(feature = "network", derive(Serialize, Deserialize))]
+    #[derive(Debug)]
     pub struct GddCurveN {}
     impl LaserCommand for GddCurveN {
         fn to_string(&self) -> String {
@@ -305,6 +354,7 @@ pub mod DiscoveryNXQueries {
     }
 
     #[cfg_attr(feature = "network", derive(Serialize, Deserialize))]
+    #[derive(Debug)]
     pub struct Gdd {}
     impl LaserCommand for Gdd {
         fn to_string(&self) -> String {
@@ -319,6 +369,7 @@ pub mod DiscoveryNXQueries {
     }
     
     #[cfg_attr(feature = "network", derive(Serialize, Deserialize))]
+    #[derive(Debug)]
     pub struct Serial {}
     impl LaserCommand for Serial {
         fn to_string(&self) -> String {
@@ -336,6 +387,7 @@ pub mod DiscoveryNXQueries {
 
 impl Laser for Discovery {
     type CommandEnum = DiscoveryNXCommands;
+    type LaserStatus = DiscoveryNXStatus;
 
     fn send_serial_command(&mut self, command : &str) -> Result<(), CoherentError> {
         let command = command.to_string() + "\r\n"; // Need to end with <CR><LF>
@@ -461,6 +513,7 @@ impl Laser for Discovery {
         reader.read_line(&mut buf)
             .map_err(|_| CoherentError::InvalidResponseError("Error reading line".to_string()))?;
         if buf.contains("COMMAND NOT EXECUTED") {
+            println!("{}", buf);
             return Err(CoherentError::CommandNotExecutedError);
         }
         if self._prompt {buf = buf.split("Chameleon>").collect::<Vec<&str>>()[1].to_string();}
@@ -525,6 +578,112 @@ impl Laser for Discovery {
         self.port.flush().map_err(|e| CoherentError::InvalidResponseError(e.to_string()))?;
         query.parse_result(buf)
     }
+
+    /// Query the laser for all settings and return a serialized version
+    /// to be passed through a socket
+    #[cfg(feature = "network")]
+    fn serialized_status(&mut self) -> Result<Vec<u8>, CoherentError>{
+        let echo = self.query(
+            DiscoveryNXQueries::Echo{}
+        )?;
+
+        let laser = self.query(
+            DiscoveryNXQueries::Laser{}
+        )?;
+
+        let variable_shutter = self.query(
+            DiscoveryNXQueries::Shutter{laser : DiscoveryLaser::VariableWavelength}
+        )?;
+
+        let fixed_shutter = self.query(
+            DiscoveryNXQueries::Shutter{laser : DiscoveryLaser::FixedWavelength}
+        )?;
+
+        let keyswitch = self.query(
+            DiscoveryNXQueries::Keyswitch{}
+        )?;
+
+        let faults = self.query(
+            DiscoveryNXQueries::Faults{}
+        )?;
+
+        let fault_text = self.query(
+            DiscoveryNXQueries::FaultText{}
+        )?;
+
+        let tuning = self.query(
+            DiscoveryNXQueries::Tuning{}
+        )?;
+
+        let alignment_var = self.query(
+            DiscoveryNXQueries::AlignmentMode{laser : DiscoveryLaser::VariableWavelength}
+        )?;
+
+        let alignment_fixed = self.query(
+            DiscoveryNXQueries::AlignmentMode{laser : DiscoveryLaser::FixedWavelength}
+        )?;
+
+        let status = self.query(
+            DiscoveryNXQueries::Status{}
+        )?;
+
+        let wavelength = self.query(
+            DiscoveryNXQueries::Wavelength{}
+        )?;
+
+        let power_var = self.query(
+            DiscoveryNXQueries::Power{laser : DiscoveryLaser::VariableWavelength}
+        )?;
+
+        let power_fixed = self.query(
+            DiscoveryNXQueries::Power{laser : DiscoveryLaser::FixedWavelength}
+        )?;
+
+        let gdd_curve = self.query(
+            DiscoveryNXQueries::GddCurve{}
+        )?;
+
+        let gdd_curve_n = self.query(
+            DiscoveryNXQueries::GddCurveN{}
+        )?;
+
+        let gdd = self.query(
+            DiscoveryNXQueries::Gdd{}
+        )?;
+
+        let laser_status = DiscoveryNXStatus{
+            echo,
+            laser,
+            variable_shutter,
+            fixed_shutter,
+            keyswitch,
+            faults,
+            fault_text,
+            tuning,
+            alignment_var,
+            alignment_fixed,
+            status,
+            wavelength,
+            power_var,
+            power_fixed,
+            gdd_curve,
+            gdd_curve_n,
+            gdd,
+        };
+
+        let mut buf = Vec::new();
+        buf.clear();
+
+        laser_status.serialize(&mut Serializer::new(&mut buf))
+            .map_err(|_| CoherentError::SerializationError)?;
+
+        Ok(buf)
+    }
+
+    fn into_laser_type() -> LaserType {
+        LaserType::DiscoveryNX
+    }
+
 }
 
 /// Convenience functions
@@ -680,6 +839,14 @@ mod tests {
     fn test_shutter() {
         use std::thread;
         let mut discovery = Discovery::find_first().unwrap();
+
+        if 
+            discovery.query(DiscoveryNXQueries::Laser{}).unwrap() == LaserState::Standby 
+            || !discovery.query(DiscoveryNXQueries::Keyswitch{}).unwrap()
+        {
+            println!("Laser is off, cannot execute shutter commands");
+            return;
+        }
         
         let mut shutter_state = discovery.query(
             DiscoveryNXQueries::Shutter{
@@ -925,7 +1092,7 @@ mod tests {
 
     #[cfg(feature = "network")]
     #[test]
-    fn test_command_serde(){
+    fn test_serde_command(){
         use rmp_serde::Serializer;
         let command = DiscoveryNXCommands::Echo{echo_on : true};
 
@@ -960,37 +1127,79 @@ mod tests {
 
     #[cfg(feature = "network")]
     #[test]
-    fn test_query_serde(){
+    fn test_serde_query(){
         use rmp_serde::Serializer;
 
-        let query = DiscoveryNXQueries::Echo{};
-
         let mut buf = Vec::new();
-        query.serialize(&mut Serializer::new(&mut buf)).unwrap();
-    
-        println!("Serialized : {:?}", buf);
+        buf.clear();
 
-        match DiscoveryNXCommands::deserialize(
-            &mut rmp_serde::Deserializer::new(&buf[..])) {
-            Ok(DiscoveryNXCommands::Echo{echo_on}) => assert_eq!(echo_on, true),
-            _ => panic!("Wrong command type")
-            }
-        
-        let command = DiscoveryNXCommands::Shutter {
-            laser : DiscoveryLaser::VariableWavelength,
-            state : ShutterState::Open
+        let test_status = DiscoveryNXStatus{
+            echo : true,
+            laser : LaserState::On,
+            variable_shutter : ShutterState::Open,
+            fixed_shutter : ShutterState::Closed,
+            keyswitch : true,
+            faults : 0,
+            fault_text : "No faults".to_string(),
+            tuning : TuningStatus::Ready,
+            alignment_var : true,
+            alignment_fixed : false,
+            status : "Ready".to_string(),
+            wavelength : 840.0,
+            power_var : 100.0,
+            power_fixed : 100.0,
+            gdd_curve : 0,
+            gdd_curve_n : "Test".to_string(),
+            gdd : 0.0,
         };
 
-        buf.clear();
-        command.serialize(&mut Serializer::new(&mut buf)).unwrap();
+        test_status.serialize(&mut Serializer::new(&mut buf)).unwrap();
 
-        match DiscoveryNXCommands::deserialize(
+        println!("Serialized : {:?}", buf);
+
+        match DiscoveryNXStatus::deserialize(
             &mut rmp_serde::Deserializer::new(&buf[..])) {
-            Ok(DiscoveryNXCommands::Shutter{laser, state}) => {
-                assert_eq!(laser, DiscoveryLaser::VariableWavelength);
-                assert_eq!(state, ShutterState::Open);
+            Ok(status) => {
+                assert_eq!(status.echo, true);
+                assert_eq!(status.laser, LaserState::On);
+                assert_eq!(status.variable_shutter, ShutterState::Open);
+                assert_eq!(status.fixed_shutter, ShutterState::Closed);
+                assert_eq!(status.keyswitch, true);
+                assert_eq!(status.faults, 0);
+                assert_eq!(status.fault_text, "No faults".to_string());
+                assert_eq!(status.tuning, TuningStatus::Ready);
+                assert_eq!(status.alignment_var, true);
+                assert_eq!(status.alignment_fixed, false);
+                assert_eq!(status.status, "Ready".to_string());
+                assert_eq!(status.wavelength, 840.0);
+                assert_eq!(status.power_var, 100.0);
+                assert_eq!(status.power_fixed, 100.0);
+                assert_eq!(status.gdd_curve, 0);
+                assert_eq!(status.gdd_curve_n, "Test".to_string());
+                assert_eq!(status.gdd, 0.0);
             },
-            _ => panic!("Wrong command type")
+            _ => panic!("Wrong status type")
+        }
+
+        println!("Deserialized : {:?}", DiscoveryNXStatus::deserialize(
+            &mut rmp_serde::Deserializer::new(&buf[..])).unwrap());
+    }
+
+
+    #[cfg(feature = "network")]
+    #[test]
+    fn test_polled_real_query(){
+
+        let mut discovery = Discovery::find_first().unwrap();
+
+        let status = discovery.serialized_status().unwrap();
+
+        println!("Status : {:?}", status);
+
+        match DiscoveryNXStatus::deserialize(
+            &mut rmp_serde::Deserializer::new(&status[..])) {
+            Ok(status) => println!("Deserialized : {:?}", status),
+            _ => panic!("Wrong status type")
         }
     }
 }

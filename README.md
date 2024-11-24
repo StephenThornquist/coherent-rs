@@ -141,7 +141,8 @@ discovery.set_shutter(laser::DiscoveryLaser::FixedWavelength,
 
 It's slightly frustrating that there's only one USB port on the Coherent lasers,
 because sometimes multiple systems interact with one laser. This crate also contains
-a tool for network communication with classes implementing the `Laser` trait.
+a tool for network communication with classes implementing the `Laser` trait. It relies
+on `serde` and `rmp-serde` to serialize laser commands.
 
 ```rust
 use coherent_rs::{Discovery, NetworkLaser, NetworkLaserInterface};

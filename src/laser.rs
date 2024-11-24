@@ -9,15 +9,17 @@ use crate::CoherentError;
 use serde::{Serialize, Deserialize};
 
 pub mod discoverynx;
+pub mod debug;
 
 pub use discoverynx::{Discovery, DiscoveryNXCommands, DiscoveryNXQueries, DiscoveryLaser};
 
 #[cfg_attr(feature = "network", derive(Serialize, Deserialize))]
 /// The Coherent laser models currently supported by this library.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum LaserType {
     DiscoveryNX,
     // ChameleonUltra,
+    DebugLaser, // For testing purposes -- behaves like a laser.
     UnrecognizedDevice,
 }
 
@@ -25,6 +27,7 @@ impl From<u16> for LaserType {
     /// Convert a Product ID into a `LaserType`.
     fn from(product_id : u16) -> Self {
         match product_id {
+            0 => LaserType::DebugLaser,
             516 => LaserType::DiscoveryNX,
             _ => LaserType::UnrecognizedDevice,
         }
@@ -106,11 +109,19 @@ impl std::ops::Not for TuningStatus {
     }
 }
 
-pub trait LaserCommand {
+pub trait LaserCommand : Sized {
     fn to_string(&self) -> String;
 }
 
-pub trait Query : LaserCommand + Serialize + Deserialize<'static> {
+#[cfg(feature = "network")]
+pub trait Query : LaserCommand + Deserialize<'static> + Serialize {
+    type Result;
+    fn parse_result(&self, result : &str) -> Result<Self::Result, CoherentError>;
+}
+
+
+#[cfg(not(feature = "network"))]
+pub trait Query : LaserCommand{
     type Result;
     fn parse_result(&self, result : &str) -> Result<Self::Result, CoherentError>;
 }
@@ -121,13 +132,19 @@ pub trait Query : LaserCommand + Serialize + Deserialize<'static> {
 /// 
 /// * Queries - These are commands that are sent to the laser
 /// to request information about its state or configuration.
-pub trait Laser: Sized {
+/// 
+/// Lasers implement `Send` to allow for threading and 
+/// Network interfaces.
+pub trait Laser: Into<LaserType> + Send {
 
     #[cfg(feature = "network")]
-    type CommandEnum : LaserCommand + Serialize + Deserialize<'static>;
+    type CommandEnum : LaserCommand + Serialize + Deserialize<'static> + core::fmt::Debug;
 
     #[cfg(not(feature = "network"))]
-    type CommandEnum : LaserCommand;
+    type CommandEnum : LaserCommand + core::fmt::Debug;
+
+    #[cfg(feature = "network")]
+    type LaserStatus: Serialize + Deserialize<'static> + core::fmt::Debug; // for status communication over serial
 
     /// Create a new instance of the laser by opening a
     /// serial connection to the specified port. If no port
@@ -256,7 +273,16 @@ pub trait Laser: Sized {
 
     /// Send a query to the laser that expects a response
     fn query<Q : Query>(&mut self, query : Q) -> Result<Q::Result, CoherentError>;
+
+    /// Executes all of the desired queries and returns them
+    /// in a serialized format. Only needed for network-compatible
+    /// implementations
+    #[cfg(feature = "network")]
+    fn serialized_status(&mut self) -> Result<Vec<u8>, CoherentError>;
+
+    fn into_laser_type() -> LaserType;
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -291,4 +317,20 @@ mod tests {
             }
         }
     }
+
+    #[cfg(feature = "network")]
+    #[test]
+    fn test_serde_laser_type(){
+        use rmp_serde::Serializer;
+
+        let laser_type = LaserType::DiscoveryNX;
+        let mut buf = Vec::new();
+        laser_type.serialize(&mut Serializer::new(&mut buf)).unwrap();
+
+        let laser_type_deserialized = LaserType::deserialize(
+           &mut rmp_serde::Deserializer::new(&buf[..])
+        ).unwrap();
+        assert_eq!(laser_type, laser_type_deserialized);
+    }
+
 }
