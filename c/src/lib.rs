@@ -1,6 +1,8 @@
 //! Thin C ABI layer for the `coherent_rs` crate
 
 use coherent_rs::{laser, Discovery, laser::Laser};
+#[cfg(feature="network")]
+use coherent_rs::network::{BasicNetworkLaserClient, NetworkLaserServer, NetworkLaserClient};
 
 /// C ABI
 #[no_mangle]
@@ -207,4 +209,26 @@ pub extern "C" fn discovery_clear_faults(discovery : *mut Discovery) -> i32 {
         Ok(()) => 0,
         Err(_) => -1,
     }}
+}
+
+#[cfg(feature="network")]
+#[no_mangle]
+/// Returns a pointer to a `NetworkLaserServer` object,
+/// or `std::ptr::null_mut()` if the server could not be created.
+pub extern "C" fn connect_discovery_client(port : *const u8, port_len : usize) -> *mut BasicNetworkLaserClient<Discovery> {
+    let port = unsafe {
+        std::str::from_utf8(std::slice::from_raw_parts(port, port_len)).unwrap()
+    };
+
+    match BasicNetworkLaserClient::connect(port) {
+        Ok(client) => Box::into_raw(Box::new(client)),
+        Err(_) => std::ptr::null_mut()
+    }
+}
+
+#[cfg(feature = "network")]
+#[no_mangle]
+pub extern "C" fn free_discovery_client(client : *mut BasicNetworkLaserClient<Discovery>) {
+    if client.is_null() {return}
+    drop(unsafe {Box::from_raw(client)});
 }

@@ -513,7 +513,6 @@ impl Laser for Discovery {
         reader.read_line(&mut buf)
             .map_err(|_| CoherentError::InvalidResponseError("Error reading line".to_string()))?;
         if buf.contains("COMMAND NOT EXECUTED") {
-            println!("{}", buf);
             return Err(CoherentError::CommandNotExecutedError);
         }
         if self._prompt {buf = buf.split("Chameleon>").collect::<Vec<&str>>()[1].to_string();}
@@ -579,10 +578,7 @@ impl Laser for Discovery {
         query.parse_result(buf)
     }
 
-    /// Query the laser for all settings and return a serialized version
-    /// to be passed through a socket
-    #[cfg(feature = "network")]
-    fn serialized_status(&mut self) -> Result<Vec<u8>, CoherentError>{
+    fn status(&mut self) -> Result<Self::LaserStatus, CoherentError> {
         let echo = self.query(
             DiscoveryNXQueries::Echo{}
         )?;
@@ -651,7 +647,7 @@ impl Laser for Discovery {
             DiscoveryNXQueries::Gdd{}
         )?;
 
-        let laser_status = DiscoveryNXStatus{
+        Ok(DiscoveryNXStatus{
             echo,
             laser,
             variable_shutter,
@@ -669,7 +665,14 @@ impl Laser for Discovery {
             gdd_curve,
             gdd_curve_n,
             gdd,
-        };
+        })
+    }
+
+    /// Query the laser for all settings and return a serialized version
+    /// to be passed through a socket. Average speed is ~70 ms.
+    #[cfg(feature = "network")]
+    fn serialized_status(&mut self) -> Result<Vec<u8>, CoherentError>{
+        let laser_status = self.status()?;
 
         let mut buf = Vec::new();
         buf.clear();

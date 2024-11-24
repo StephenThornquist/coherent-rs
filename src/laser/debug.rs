@@ -191,9 +191,8 @@ impl Laser for DebugLaser {
         Err(CoherentError::CommandNotExecutedError)
     }
 
-    #[cfg(feature = "network")]
-    fn serialized_status(&mut self) -> Result<Vec<u8>, CoherentError> {
-        let laser_status = DiscoveryNXStatus {
+    fn status(&mut self) -> Result<Self::LaserStatus, CoherentError> {
+        Ok(DiscoveryNXStatus {
             echo : self.echo,
             laser : LaserState::On,
             variable_shutter : self._variable_shutter.into(),
@@ -211,7 +210,12 @@ impl Laser for DebugLaser {
             gdd_curve_n : self._gdd_curve_n.clone(),
             gdd_curve : self._gdd_curve,
             status : self._status.clone(),
-        };
+        })
+    }
+
+    #[cfg(feature = "network")]
+    fn serialized_status(&mut self) -> Result<Vec<u8>, CoherentError> {
+        let laser_status = self.status()?;
 
         let mut buf = Vec::new();
         laser_status.serialize(&mut rmp_serde::Serializer::new(&mut buf)).unwrap();

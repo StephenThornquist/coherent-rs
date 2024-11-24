@@ -274,6 +274,9 @@ pub trait Laser: Into<LaserType> + Send {
     /// Send a query to the laser that expects a response
     fn query<Q : Query>(&mut self, query : Q) -> Result<Q::Result, CoherentError>;
 
+    /// Returns a struct containing the current status of the laser
+    fn status(&mut self) -> Result<Self::LaserStatus, CoherentError>;
+    
     /// Executes all of the desired queries and returns them
     /// in a serialized format. Only needed for network-compatible
     /// implementations

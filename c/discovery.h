@@ -27,14 +27,25 @@
 #include<cstddef>
 
 typedef void* Discovery;
+typedef void* DiscoveryClient;
 extern "C" {
-    // If unable to find a device, returns nullptr
+    /**
+     * @brief If unable to find a device, returns nullptr.
+     * Caller is responsible for freeing the returned Discovery.
+     * 
+     * @return Discovery or nullptr
+     */
     API_IMPORT Discovery discovery_find_first();
     // If unable to find a device, returns nullptr
     API_IMPORT Discovery discovery_by_port_name(const char* port_name, size_t port_name_len);
     // If unable to find a device, returns nullptr
     API_IMPORT Discovery discovery_by_serial_number(const char* serial_number, size_t serial_number_len);
-    // Must be called to avoid leaks!
+    
+    /**
+     * @brief Used to free memory managed by a Discovery object.
+     * 
+     * @param discovery 
+     */
     API_IMPORT void free_discovery(Discovery discovery);
 
     /**
@@ -87,7 +98,31 @@ extern "C" {
     API_IMPORT void discovery_get_status(Discovery discovery, char* status, size_t* status_len);
     API_IMPORT void discovery_get_fault_text(Discovery discovery, char* fault_text, size_t* fault_text_len);
     API_IMPORT int discovery_clear_faults(Discovery discovery);
-    
+
+#ifdef COHERENT_RS_NETWORK
+// Network functions to manage a Discovery over sockets.
+
+    /**
+     * @brief If unable to find a device, returns nullptr.
+     * Caller is responsible for freeing the returned DiscoveryClient.
+     * 
+     * See `free_discovery_client` to free the returned DiscoveryClient.
+     * 
+     * @param port_name Port name of the device to connect to
+     * @param port_name_len Length of port_name char array
+     * @return DiscoveryClient or nullptr
+     */
+    API_IMPORT DiscoveryClient connect_discovery_client(const char* port_name, size_t port_name_len);
+
+    /**
+     * @brief Must be called to avoid leaks!
+     * 
+     * @param client DiscoveryClient to free
+     */
+    API_IMPORT void free_discovery_client(DiscoveryClient client);
+
+#endif // COHERENT_RS_NETWORK
+ 
 }
 
 #endif // COHERENT_RS_DISCOVERY_HPP

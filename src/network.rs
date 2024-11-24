@@ -32,7 +32,7 @@ pub const NOT_PRIMARY_CLIENT : &[u8] = b"NOT PRIMARY CLIENT\n";
 #[derive(Debug)]
 pub enum TcpError {
     MultipleReferencesToLaser,
-    // MutexPoisoned<L>,
+    MutexPoisoned,
     CoherentError(CoherentError),
     IoError(std::io::Error),
     SerializationEncodeError(rmp_serde::encode::Error),
@@ -53,11 +53,11 @@ pub enum TcpError {
 /// let laser = Discovery::find_first();
 /// // To be continued...
 /// ```
-pub struct NetworkLaser<L : Laser + 'static> {
+pub struct NetworkLaserServer<L : Laser + 'static> {
     _listener : TcpListener,
     _clients : Arc<Mutex<Vec<TcpStream>>>,
     _client_connection_thread : Option<std::thread::JoinHandle<()>>,
-    _laser : Arc<Mutex<L>>,
+    _laser : Option<Arc<Mutex<L>>>,
     _polling_interval : Arc<Mutex<f32>>, // seconds
     _polling_thread : Option<std::thread::JoinHandle<()>>,
     _polling : Arc<AtomicBool>,
@@ -84,6 +84,7 @@ pub struct NetworkLaser<L : Laser + 'static> {
 /// 
 /// let status = deserialize_laser_status::<DebugLaser>(&sent_message).unwrap();
 /// println!{"Deserialized : {:?}", status};
+/// assert_eq!(status, laser.status().unwrap());
 /// ```
 fn deserialize_laser_status<L : Laser>(stream : &[u8]) -> Result<L::LaserStatus, TcpError> {
     if let Some(start_idx) = stream.windows(STATUS_MARKER.len()).rposition(
@@ -105,6 +106,14 @@ fn deserialize_laser_status<L : Laser>(stream : &[u8]) -> Result<L::LaserStatus,
     }
 }
 
+/// Deserializes commands in the stream and returns a `Result` with the first `CommandEnum`.
+/// found. Looks for the `COMMAND_MARKER` and the `TERMINATOR` in the stream.
+/// 
+/// # Example
+/// 
+/// ```rust
+/// // TODO
+/// ```
 fn deserialize_command<L : Laser>(stream : &[u8]) -> Result<L::CommandEnum, TcpError> {
     if let Some(start_idx) = stream.windows(COMMAND_MARKER.len()).position(
         |window| window == COMMAND_MARKER
@@ -174,13 +183,13 @@ fn deserialize_laser_type(stream : &[u8]) -> Result<LaserType, TcpError> {
 /// a `Mutex`.
 /// 
 /// Default polling interval is 1 second.
-pub fn create_listener<L : Laser + 'static>(laser : L, port : &str, polling_interval : Option<f32>) -> Result<NetworkLaser<L>, TcpError> {
-    NetworkLaser::new(laser, port, polling_interval)
+pub fn create_listener<L : Laser + 'static>(laser : L, port : &str, polling_interval : Option<f32>) -> Result<NetworkLaserServer<L>, TcpError> {
+    NetworkLaserServer::new(laser, port, polling_interval)
 }
 
-impl<L : Laser + 'static> Clone for NetworkLaser<L> {
+impl<L : Laser + 'static> Clone for NetworkLaserServer<L> {
     fn clone(&self) -> Self {
-        NetworkLaser {
+        NetworkLaserServer {
             _listener : self._listener.try_clone().unwrap(),
             _laser : self._laser.clone(),
             _polling_interval : self._polling_interval.clone(),
@@ -194,7 +203,7 @@ impl<L : Laser + 'static> Clone for NetworkLaser<L> {
     }
 }
 
-impl<L : Laser + 'static> NetworkLaser<L> {
+impl<L : Laser + 'static> NetworkLaserServer<L> {
 
 
     /// Create a network listener that listens on the specified port.
@@ -208,14 +217,16 @@ impl<L : Laser + 'static> NetworkLaser<L> {
     /// 
     /// * `laser` - The laser to control over the network.
     /// * `port` - The port to listen on.
-    /// * `polling_interval` - The interval in seconds to poll the laser.
+    /// * `polling_interval` - The interval in seconds to poll the laser. Be sure to
+    /// check the documentation for each laser and make sure it can reasonably be expected
+    /// to be polled at the specified interval. Recommended to be at least 200 milliseconds.
     pub fn new(laser : L, port : &str, polling_interval : Option<f32>) -> Result<Self, TcpError> {
         let listener = TcpListener::bind(port)
         .map_err(|e| TcpError::IoError(e))?;
 
-        let nl = NetworkLaser {
+        let nl = NetworkLaserServer {
             _listener : listener,
-            _laser : Arc::new(Mutex::new(laser)),
+            _laser : Some(Arc::new(Mutex::new(laser))),
             _polling_interval : Arc::new(Mutex::new(polling_interval.unwrap_or(1.0))),
             _polling_thread : None,
             _polling : Arc::new(AtomicBool::new(false)),
@@ -239,19 +250,16 @@ impl<L : Laser + 'static> NetworkLaser<L> {
         *polling_interval = interval;
     }
 
-    // /// Returns the laser and kills the `NetworkLaser`
-    // /// TODO implement correctly -- the `drop` method gets in the way
-    // /// of prematurely killing the `Arc`.
-    // pub fn get_laser(self) -> Result<L, TcpError> {
-    //     let laser = Arc::into_inner(self._laser)
-    //         .ok_or(TcpError::MultipleReferencesToLaser)
-    //         .and_then(
-    //             |mutex| 
-    //             mutex.into_inner().map_err(|_| TcpError::MultipleReferencesToLaser)
-    //         )?;
-    //     drop(self);
-    //     Ok(laser)
-    // }
+    /// Returns the laser and kills the `NetworkLaserServer`. Stops polling as well.
+    /// Returns an error if the `NetworkLaserServer` is not destroyed or if the
+    /// `Mutex` is poisoned.
+    pub fn get_laser(mut self) -> Result<L, TcpError> {
+        self.stop_polling();
+        Arc::try_unwrap(self._laser.take()
+            .ok_or(TcpError::MultipleReferencesToLaser)?)
+            .map(|l| l.into_inner().unwrap())
+            .map_err(|_| TcpError::MutexPoisoned)
+    }
 
     /// Initializes the polling thread. Does nothing if already listening for connections.
     pub fn poll(&mut self) -> Result<(), TcpError> {
@@ -299,8 +307,9 @@ impl<L : Laser + 'static> NetworkLaser<L> {
         self._polling_thread = Some(std::thread::spawn( move || {
             while _polling.load(std::sync::atomic::Ordering::SeqCst) { 
                 {
-                    let mut laser_lock = _laser.lock().unwrap();
+                    let mut laser_lock = _laser.as_ref().unwrap().lock().unwrap();
                     let serialized = laser_lock.serialized_status().unwrap();
+                    drop(laser_lock);
                     let mut clients = clients.lock().unwrap();
                     clients.retain(|mut client| {
                         // Write all in one line
@@ -321,8 +330,8 @@ impl<L : Laser + 'static> NetworkLaser<L> {
         // Investigates the clients for commands, deserializes them, then executes
         // them on the laser.
 
-        let _command_interval_ms = 50; //milliseconds
-        let _laser = Arc::clone(&self._laser);
+        let _command_interval_ms = 200; //milliseconds
+        let _laser = Arc::clone(&self._laser.as_ref().unwrap());
         let _clients = Arc::clone(&self._clients);
         let _polling = self._polling.clone();
         let _primary_client = self._primary_client.clone();
@@ -336,12 +345,13 @@ impl<L : Laser + 'static> NetworkLaser<L> {
                     //         continue;
                     //     }
                     // }
+                    let mut buf_ptr = 0;
                     let mut buf = [0u8; 1024];
                     match client.read(&mut buf) {
-                        Ok(_) => {
+                        Ok(n) => {
+                            buf_ptr += n;
                             // If a command is in the buffer, execute it.
-                            if let Ok(command) = deserialize_command::<L>(&buf) {
-                                println!{"Received command : {:?}", command};
+                            if let Ok(command) = deserialize_command::<L>(&buf[0..buf_ptr]) {
                                 let mut laser = _laser.lock().unwrap();
                                 match laser.send_command(command) {
                                     Ok(_) => {
@@ -390,18 +400,23 @@ impl<L : Laser + 'static> NetworkLaser<L> {
 
     /// Send a command to the laser through the mutex
     pub fn command(&self, command : L::CommandEnum) -> Result<(), TcpError> {
-        let mut laser = self._laser.lock().unwrap();
+        let mut laser = self._laser.as_ref().unwrap().lock().unwrap();
         laser.send_command(command).map_err(|e| TcpError::CoherentError(e))
     }
 
     /// Send a query to the laser through the mutex
     pub fn query<Q : Query> (&self, query : Q) -> Result<Q::Result, TcpError> {
-        let mut laser = self._laser.lock().unwrap();
+        let mut laser = self._laser.as_ref().unwrap().lock().unwrap();
         laser.query(query).map_err(|e| TcpError::CoherentError(e))
+    }
+
+    pub fn status(&self) -> Result<L::LaserStatus, TcpError> {
+        let mut laser = self._laser.as_ref().unwrap().lock().unwrap();
+        laser.status().map_err(|e| TcpError::CoherentError(e))
     }
 }
 
-impl<L : Laser + 'static> Drop for NetworkLaser<L> {
+impl<L : Laser + 'static> Drop for NetworkLaserServer<L> {
     fn drop(&mut self) {
         self.stop_polling();
     }
@@ -411,7 +426,7 @@ impl<L : Laser + 'static> Drop for NetworkLaser<L> {
 /// by the `Laser` type parameter. Individual structs that implement this trait
 /// can also implement `Laser`-specific methods. The actual implementation of the
 /// network connection is left to the implementing struct.
-pub trait NetworkLaserInterface<L : Laser> : Sized {
+pub trait NetworkLaserClient<L : Laser> : Sized {
     
     /// Must be implemented for each struct -- defined how to
     /// connect to the laser over the network.
@@ -439,16 +454,18 @@ pub trait NetworkLaserInterface<L : Laser> : Sized {
 
         // Wait for command evaluation
         let mut response = [0u8; 1024];
+        let mut response_ptr = 0;
         loop {
             match self.access_stream().read(&mut response) {
-                Ok(_) => {
-                    if response.starts_with(COMMAND_SUCCESSFUL) {
+                Ok(n) => {
+                    response_ptr += n;
+                    if response[0..response_ptr].starts_with(COMMAND_SUCCESSFUL) {
                         return Ok(());
                     }
-                    else if response.starts_with(COMMAND_FAILED) {
+                    else if response[0..response_ptr].starts_with(COMMAND_FAILED) {
                         return Err(TcpError::CommandError);
                     }
-                    else if response.starts_with(NOT_PRIMARY_CLIENT) {
+                    else if response[0..response_ptr].starts_with(NOT_PRIMARY_CLIENT) {
                         return Err(TcpError::NotPrimaryClient);
                     }
                 },
@@ -457,8 +474,6 @@ pub trait NetworkLaserInterface<L : Laser> : Sized {
                 }
             }
         }
-
-    
     }
     
     /// Returns a full status of the laser from the network. Warning: blocking!
@@ -493,12 +508,12 @@ pub trait NetworkLaserInterface<L : Laser> : Sized {
 /// `NetworkLaser` over the network. Doesn't have any unique functionality
 /// or ability to query specific details, but can be used to send commands
 /// or get the full status of the laser.
-pub struct BasicNetworkLaserInterface<L : Laser>{
+pub struct BasicNetworkLaserClient<L : Laser>{
     _stream : TcpStream,
     _laser : PhantomData<L>,
 }
 
-impl<L : Laser> NetworkLaserInterface<L> for  BasicNetworkLaserInterface<L> {
+impl<L : Laser> NetworkLaserClient<L> for  BasicNetworkLaserClient<L> {
     /// Connect to a `NetworkLaser` over the network, if it exists
     /// 
     /// # Example
@@ -520,7 +535,7 @@ impl<L : Laser> NetworkLaserInterface<L> for  BasicNetworkLaserInterface<L> {
         }
 
         Ok(
-            BasicNetworkLaserInterface::<L> {
+            BasicNetworkLaserClient::<L> {
                 _stream : stream,
                 _laser : PhantomData
             }
@@ -538,12 +553,6 @@ mod tests {
     use super::*;
     use crate::laser::{Discovery, DiscoveryNXCommands, DiscoveryLaser};
     use crate::laser::debug::DebugLaser;
-
-    /// Tests that don't rely on a laser being connected.
-    #[test]
-    fn test_serial_comm_threading() {
-
-    }
 
     #[test]
     fn test_deserialize_laser_type(){
@@ -578,21 +587,73 @@ mod tests {
 
     #[test]
     fn get_laser() {
-        let mut discovery = DebugLaser::find_first().unwrap();
-        let mut network_laser = NetworkLaser::new(discovery, "127.0.0.1:907", None);
-        // let laser_again = network_laser.unwrap().get_laser().unwrap();
-        // println!("{:?}", laser_again);
+        let mut discovery = Discovery::find_first().unwrap();
+        // let mut discovery = DebugLaser::find_first().unwrap();
+        let mut network_laser = NetworkLaserServer::new(discovery, "127.0.0.1:907", None);
+        let laser_again = network_laser.unwrap().get_laser().unwrap();
+        println!("{:?}", laser_again);
     }
 
-    /// Simple tests of whether the laser control stuff still functions while
-    /// listening on a network port.
     #[test]
-    fn test_network_laser() {
-        use crate::network::NetworkLaserInterface;
-        // let mut discovery = Discovery::find_first().unwrap();
-        let discovery = DebugLaser::find_first().unwrap();
+    fn test_serialize_speed() {
+        let mut discovery = Discovery::find_first().unwrap();
+        
+        let mut speeds = Vec::new();
+        for _i in 0..100 {
+            let now = std::time::Instant::now();
+            let serialized = discovery.serialized_status().unwrap();
+            speeds.push(now.elapsed());
+        }
 
-        let mut network_laser = NetworkLaser::new(
+        let mut total = std::time::Duration::new(0, 0);
+        for speed in speeds.iter() {
+            total += *speed;
+        }
+
+        println!{"Average speed : {:?}", total / speeds.len() as u32};
+    }
+
+    #[test]
+    fn test_command_speed() {
+        use crate::laser::discoverynx::DiscoveryNXQueries;
+        let mut discovery = Discovery::find_first().unwrap();
+
+        let mut speeds = Vec::new();
+        let mut n_executed = 0;
+        while n_executed < 100 {
+            let current_state = discovery.query(
+                DiscoveryNXQueries::Shutter{laser : DiscoveryLaser::FixedWavelength}
+            ).unwrap();
+            let now = std::time::Instant::now();
+            match discovery.send_command(
+                DiscoveryNXCommands::Shutter{
+                    laser : DiscoveryLaser::FixedWavelength,
+                    state: !current_state
+                }
+            ) {
+                Ok(_) => {
+                    speeds.push(now.elapsed());
+                    n_executed += 1;
+                    println!("Current state {:?}", !current_state);
+                },
+                Err(_) => {}
+            }
+            speeds.push(now.elapsed());
+        }
+
+        let mut total = std::time::Duration::new(0, 0);
+        for speed in speeds.iter() {
+            total += *speed;
+        }
+
+        println!{"Average speed : {:?}", total / speeds.len() as u32};
+    }
+
+     #[test]
+    fn test_network_laser_discovery() {
+        let mut discovery = Discovery::find_first().unwrap();
+
+        let mut network_laser = NetworkLaserServer::new(
             discovery, "127.0.0.1:907", 
             Some(0.5),
             // None
@@ -604,10 +665,10 @@ mod tests {
             DiscoveryNXCommands::Shutter{laser : DiscoveryLaser::VariableWavelength, state : false.into()}
         ).unwrap();
 
-        println!("Is it polling? {}! Listening on port {}", network_laser.polling(), network_laser.get_port());
+        assert!(network_laser.polling());
 
-        let mut my_interface = BasicNetworkLaserInterface::<DebugLaser>::connect("127.0.0.1:907").unwrap();
-        println!{"Connected to laser of type {:?}", my_interface.get_laser_type()};
+        let mut my_interface = BasicNetworkLaserClient::<Discovery>::connect("127.0.0.1:907").unwrap();
+        assert_eq!(crate::laser::LaserType::DiscoveryNX, my_interface.get_laser_type());
 
         // print how long the query takes
         let start = std::time::Instant::now();
@@ -615,15 +676,12 @@ mod tests {
         println!{"Query took {:?}", start.elapsed()};
         assert_eq!(read_status.variable_shutter, false.into());
 
-        // spam the laser!
-        // for i in 0..50 {
-        //     std::thread::sleep(std::time::Duration::from_millis(1));
-        //     my_interface.command(
-        //         DiscoveryNXCommands::Shutter{laser : DiscoveryLaser::VariableWavelength, state : false.into()}
-        //     ).unwrap();
-        // }
+        assert!(
+            BasicNetworkLaserClient::<DebugLaser>::connect("127.0.0.1:907")
+            .is_err()
+        );
 
-        let mut second_interface = BasicNetworkLaserInterface::<DebugLaser>::connect("127.0.0.1:907").unwrap();
+        let mut second_interface = BasicNetworkLaserClient::<Discovery>::connect("127.0.0.1:907").unwrap();
 
         //print how long the command takes
         let start = std::time::Instant::now();
@@ -638,19 +696,17 @@ mod tests {
         ).unwrap();
         println!{"Command took {:?}", start.elapsed()};
 
-        std::thread::sleep(std::time::Duration::from_secs(1));
-
         let start = std::time::Instant::now();
         let read_status = my_interface.query_status().unwrap();
         println!{"Query took {:?}", start.elapsed()};
         println!{"Read status : {:?}", read_status};
         assert_eq!(read_status.variable_shutter, true.into());
 
-        network_laser.command(
+        second_interface.command(
             DiscoveryNXCommands::Shutter{laser : DiscoveryLaser::VariableWavelength, state : false.into()}
         ).unwrap();
 
-        std::thread::sleep(std::time::Duration::from_millis(500));
+        assert_eq!(network_laser.status().unwrap().variable_shutter, false.into());
 
         let second_status = second_interface.query_status().unwrap();
         println!{"Second status : {:?}", second_status};
@@ -664,5 +720,104 @@ mod tests {
         network_laser.stop_polling();
 
         println!("Stopped polling");
+        assert!(!network_laser.polling());
+    }
+
+    /// Simple tests of whether the laser control stuff still functions while
+    /// listening on a network port.
+    #[test]
+    fn test_network_laser_debug() {
+        // let mut discovery = Discovery::find_first().unwrap();
+        let discovery = DebugLaser::find_first().unwrap();
+
+        let mut network_laser = NetworkLaserServer::new(
+            discovery, "127.0.0.1:907", 
+            Some(0.5),
+            // None
+            ).unwrap();
+
+        network_laser.poll().unwrap();
+
+        network_laser.command(
+            DiscoveryNXCommands::Shutter{laser : DiscoveryLaser::VariableWavelength, state : false.into()}
+        ).unwrap();
+
+        assert!(network_laser.polling());
+
+        let mut my_interface = BasicNetworkLaserClient::<DebugLaser>::connect("127.0.0.1:907").unwrap();
+        assert_eq!(crate::laser::LaserType::DebugLaser, my_interface.get_laser_type());
+
+        // print how long the query takes
+        let start = std::time::Instant::now();
+        let read_status = my_interface.query_status().unwrap();
+        println!{"Query took {:?}", start.elapsed()};
+        assert_eq!(read_status.variable_shutter, false.into());
+
+        let mut second_interface = BasicNetworkLaserClient::<DebugLaser>::connect("127.0.0.1:907").unwrap();
+
+        //print how long the command takes
+        let start = std::time::Instant::now();
+        second_interface.command(
+            DiscoveryNXCommands::Shutter{laser : DiscoveryLaser::VariableWavelength, state : true.into()}
+        ).unwrap();
+        println!{"Command took {:?}", start.elapsed()};
+
+        let start = std::time::Instant::now();
+        my_interface.command(
+            DiscoveryNXCommands::Shutter{laser : DiscoveryLaser::VariableWavelength, state : true.into()}
+        ).unwrap();
+        println!{"Command took {:?}", start.elapsed()};
+
+        let start = std::time::Instant::now();
+        let read_status = my_interface.query_status().unwrap();
+        println!{"Query took {:?}", start.elapsed()};
+        println!{"Read status : {:?}", read_status};
+        assert_eq!(read_status.variable_shutter, true.into());
+
+        second_interface.command(
+            DiscoveryNXCommands::Shutter{laser : DiscoveryLaser::VariableWavelength, state : false.into()}
+        ).unwrap();
+
+        assert_eq!(network_laser.status().unwrap().variable_shutter, false.into());
+
+        let second_status = second_interface.query_status().unwrap();
+        println!{"Second status : {:?}", second_status};
+        assert_eq!(second_status.variable_shutter, false.into());
+
+        network_laser.command(
+            DiscoveryNXCommands::Shutter{laser : DiscoveryLaser::VariableWavelength, state : false.into()}
+        ).unwrap();
+        println!("About to stop polling");
+
+        network_laser.stop_polling();
+
+        println!("Stopped polling");
+        assert!(!network_laser.polling());
+    }
+
+    /// Tests spamming a debuglaser
+    #[test]
+    fn test_spamming_network() {
+        let discovery = DebugLaser::find_first().unwrap();
+
+        let mut network_laser = NetworkLaserServer::new(
+            discovery, "127.0.0.1:907", 
+            Some(0.5),
+            // None
+            ).unwrap();
+
+        network_laser.poll().unwrap();
+
+        let mut my_interface = BasicNetworkLaserClient::<DebugLaser>::connect("127.0.0.1:907").unwrap();
+        
+        // spam the laser!
+        let start = std::time::Instant::now();
+        for _i in 0..50 {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+            my_interface.command(
+                DiscoveryNXCommands::Shutter{laser : DiscoveryLaser::VariableWavelength, state : false.into()}
+            ).unwrap();
+        }
+        println!{"Spamming took {:?}", start.elapsed()};
     }
 }
