@@ -14,9 +14,6 @@ use crate::{
     CoherentError,
 };
 
-// Do I need these? I want to be fully generic if possible...
-use crate::laser::{Discovery, debug::DebugLaser};
-
 use serde::{Serialize, Deserialize};
 use rmp_serde::Serializer;
 
@@ -289,7 +286,7 @@ impl<L : Laser + 'static> NetworkLaserServer<L> {
                             let mut clients = _clients.lock().unwrap();
                             clients.push(stream);
                         },
-                        Err(e) => {}   
+                        Err(_) => {}   
                     }
                     if !_polling.load(std::sync::atomic::Ordering::SeqCst) {
                         break;
@@ -306,21 +303,21 @@ impl<L : Laser + 'static> NetworkLaserServer<L> {
         // Polls the laser, passes it to all the clients.
         self._polling_thread = Some(std::thread::spawn( move || {
             while _polling.load(std::sync::atomic::Ordering::SeqCst) { 
-                {
-                    let mut laser_lock = _laser.as_ref().unwrap().lock().unwrap();
-                    let serialized = laser_lock.serialized_status().unwrap();
-                    drop(laser_lock);
-                    let mut clients = clients.lock().unwrap();
-                    clients.retain(|mut client| {
-                        // Write all in one line
-                        let mut to_write = STATUS_MARKER.to_vec();
-                        to_write.extend(serialized.clone());
-                        to_write.extend(TERMINATOR);
-                        client.write_all(&to_write).is_ok()
-                    });
-                    
-                }
+                let mut clients = clients.lock().unwrap();
+            
+                let mut laser_lock = _laser.as_ref().unwrap().lock().unwrap();
+                let serialized = laser_lock.serialized_status().unwrap();
+                drop(laser_lock);
+
+                clients.retain(|mut client| {
+                    // Write all in one line
+                    let mut to_write = STATUS_MARKER.to_vec();
+                    to_write.extend(serialized.clone());
+                    to_write.extend(TERMINATOR);
+                    client.write_all(&to_write).is_ok()
+                });
                 
+                drop(clients);
                 std::thread::sleep(std::time::Duration::from_millis(
                     (*_polling_interval.lock().unwrap() * 1000.0) as u64
                 ));
@@ -330,7 +327,7 @@ impl<L : Laser + 'static> NetworkLaserServer<L> {
         // Investigates the clients for commands, deserializes them, then executes
         // them on the laser.
 
-        let _command_interval_ms = 200; //milliseconds
+        let _command_interval_ms = 60; //milliseconds
         let _laser = Arc::clone(&self._laser.as_ref().unwrap());
         let _clients = Arc::clone(&self._clients);
         let _polling = self._polling.clone();
@@ -357,15 +354,16 @@ impl<L : Laser + 'static> NetworkLaserServer<L> {
                                     Ok(_) => {
                                         client.write_all(COMMAND_SUCCESSFUL).unwrap();
                                     },
-                                    Err(e) => {
+                                    Err(_) => {
                                         client.write_all(COMMAND_FAILED).unwrap();
                                     }
                                 }
                             }
                         },
-                        Err(e) => {}
+                        Err(_) => {}
                     }
                 };
+                drop(clients);
                 // sleep prevents over-locking the mutexes
                 std::thread::sleep(std::time::Duration::from_millis(_command_interval_ms));   
             }
@@ -481,14 +479,13 @@ pub trait NetworkLaserClient<L : Laser> : Sized {
         let mut buf = [0u8; 1024]; // Fixed-size buffer for reading from the stream
         let mut data = Vec::new(); // Accumulated data
 
-        // self.access_stream().flush().map_err(|e| TcpError::IoError(e))?;
-
         loop {
             // Attempt to deserialize the current data
             if let Ok(status) = deserialize_laser_status::<L>(&data) {
                 return Ok(status);
             }
 
+            let now = std::time::Instant::now();
             // Read more data from the stream
             match self.access_stream().read(&mut buf) {
                 Ok(n) => {
@@ -500,6 +497,7 @@ pub trait NetworkLaserClient<L : Laser> : Sized {
                     return Err(TcpError::IoError(e));
                 }
             }
+            println!{"Socket access and read took {:?}", now.elapsed()};
         }
     }
 }
@@ -587,9 +585,8 @@ mod tests {
 
     #[test]
     fn get_laser() {
-        let mut discovery = Discovery::find_first().unwrap();
-        // let mut discovery = DebugLaser::find_first().unwrap();
-        let mut network_laser = NetworkLaserServer::new(discovery, "127.0.0.1:907", None);
+        let discovery = Discovery::find_first().unwrap();
+        let network_laser = NetworkLaserServer::new(discovery, "127.0.0.1:907", None);
         let laser_again = network_laser.unwrap().get_laser().unwrap();
         println!("{:?}", laser_again);
     }
@@ -601,7 +598,7 @@ mod tests {
         let mut speeds = Vec::new();
         for _i in 0..100 {
             let now = std::time::Instant::now();
-            let serialized = discovery.serialized_status().unwrap();
+            let _serialized = discovery.serialized_status().unwrap();
             speeds.push(now.elapsed());
         }
 
@@ -651,7 +648,7 @@ mod tests {
 
      #[test]
     fn test_network_laser_discovery() {
-        let mut discovery = Discovery::find_first().unwrap();
+        let discovery = Discovery::find_first().unwrap();
 
         let mut network_laser = NetworkLaserServer::new(
             discovery, "127.0.0.1:907", 
