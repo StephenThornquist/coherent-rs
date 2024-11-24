@@ -145,11 +145,37 @@ a tool for network communication with classes implementing the `Laser` trait. It
 on `serde` and `rmp-serde` to serialize laser commands.
 
 ```rust
-use coherent_rs::{Discovery, NetworkLaser, NetworkLaserInterface};
+use coherent_rs::{Discovery, DiscoveryNXCommands,
+    network::{NetworkLaserServer, BasicNetworkLaserClient}
+};
+
+let discovery = Discovery::find_first().unwrap();
+
+let mut server = NetworkLaserServer::new(discovery, "127.0.0.1:907", Some(0.2))
+    .unwrap(); // polling interval = 200 ms
+server.poll();
+
+// you can control the laser directly with the Server object if you happen
+// to own it (i.e. you're not a client socket)
+match server.command(
+    DiscoveryNXCommands::Shutter{laser : DiscoveryLaser::VariableWavelength, state : true.into()}
+){
+    Ok(()) => {},
+    Err(_) => {eprintln!{"Failed to call command!"};}
+};
+
+// Or you can interact view a client
+let mut my_client = BasicNetworkLaserClient::<Discovery>::connect("127.0.0.1:907").unwrap();
+
+println!("{:?}" , my_client.query_status().unwrap());
+
+my_client.command(
+    DiscoveryNXCommands::Shutter{laser : DiscoveryLaser::VariableWavelength, state : true.into()}
+).unwrap();
 
 
 ```
-TODO Make these!
+TODO put these in the `C` API!
 
 ## FFI (C API)
 

@@ -327,7 +327,7 @@ impl<L : Laser + 'static> NetworkLaserServer<L> {
         // Investigates the clients for commands, deserializes them, then executes
         // them on the laser.
 
-        let _command_interval_ms = 60; //milliseconds
+        let _command_interval_ms = 50; //milliseconds
         let _laser = Arc::clone(&self._laser.as_ref().unwrap());
         let _clients = Arc::clone(&self._clients);
         let _polling = self._polling.clone();
@@ -363,7 +363,7 @@ impl<L : Laser + 'static> NetworkLaserServer<L> {
                         Err(_) => {}
                     }
                 };
-                drop(clients);
+                drop(clients); // free it BEFORE you sleep!
                 // sleep prevents over-locking the mutexes
                 std::thread::sleep(std::time::Duration::from_millis(_command_interval_ms));   
             }
@@ -497,7 +497,6 @@ pub trait NetworkLaserClient<L : Laser> : Sized {
                     return Err(TcpError::IoError(e));
                 }
             }
-            println!{"Socket access and read took {:?}", now.elapsed()};
         }
     }
 }
@@ -652,7 +651,7 @@ mod tests {
 
         let mut network_laser = NetworkLaserServer::new(
             discovery, "127.0.0.1:907", 
-            Some(0.5),
+            Some(0.2),
             // None
             ).unwrap();
 
@@ -687,11 +686,8 @@ mod tests {
         ).unwrap();
         println!{"Command took {:?}", start.elapsed()};
 
-        let start = std::time::Instant::now();
-        my_interface.command(
-            DiscoveryNXCommands::Shutter{laser : DiscoveryLaser::VariableWavelength, state : true.into()}
-        ).unwrap();
-        println!{"Command took {:?}", start.elapsed()};
+        // You have to wait for it to actually execute!
+        std::thread::sleep(std::time::Duration::from_millis(300));
 
         let start = std::time::Instant::now();
         let read_status = my_interface.query_status().unwrap();
@@ -790,6 +786,37 @@ mod tests {
 
         println!("Stopped polling");
         assert!(!network_laser.polling());
+    }
+
+    #[test]
+    fn test_readme_functionality(){
+        use crate::{Discovery, DiscoveryNXCommands,
+            network::{NetworkLaserServer, BasicNetworkLaserClient}
+        };
+
+        let discovery = Discovery::find_first().unwrap();
+
+        let mut server = NetworkLaserServer::new(discovery, "127.0.0.1:907", Some(0.2))
+            .unwrap(); // polling interval = 200 ms
+        server.poll();
+
+        // you can control the laser directly with the Server object if you happen
+        // to own it (i.e. you're not a client socket)
+        match server.command(
+            DiscoveryNXCommands::Shutter{laser : DiscoveryLaser::VariableWavelength, state : true.into()}
+        ){
+            Ok(()) => {},
+            Err(_) => {eprintln!{"Failed to call command!"};}
+        };
+
+        // Or you can interact view a client
+        let mut my_client = BasicNetworkLaserClient::<Discovery>::connect("127.0.0.1:907").unwrap();
+
+        println!("{:?}" , my_client.query_status().unwrap());
+
+        my_client.command(
+            DiscoveryNXCommands::Shutter{laser : DiscoveryLaser::VariableWavelength, state : true.into()}
+        ).unwrap();
     }
 
     /// Tests spamming a debuglaser
