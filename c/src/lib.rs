@@ -3,7 +3,7 @@
 use coherent_rs::{laser, Discovery, laser::Laser};
 use coherent_rs::{DiscoveryNXCommands, discoverynx::DiscoveryLaser};
 #[cfg(feature="network")]
-use coherent_rs::network::{BasicNetworkLaserClient, NetworkLaserServer, NetworkLaserClient};
+use coherent_rs::network::{BasicNetworkLaserClient, NetworkLaserClient};
 
 /// C ABI
 #[no_mangle]

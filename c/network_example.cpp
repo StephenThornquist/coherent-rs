@@ -66,7 +66,8 @@ int main() {
 
     print_status(status);
 
-    set_discovery_client_variable_shutter(client, true);
+    // set_discovery_client_variable_shutter(client, true);
+    set_discovery_client_variable_shutter(client, ShutterState::OPEN);
 
     status = discovery_client_query_status(client);
 
@@ -74,7 +75,8 @@ int main() {
 
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
-    set_discovery_client_variable_shutter(client, false);
+    set_discovery_client_variable_shutter(client, ShutterState::CLOSED);
+    // set_discovery_client_variable_shutter(client, false);
 
     status = discovery_client_query_status(client);
 
