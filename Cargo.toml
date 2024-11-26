@@ -17,5 +17,9 @@ rmp-serde = {version = "*", optional = true}
 [lib]
 name = "coherent_rs"
 
+[[bin]]
+name = "host-discovery-server"
+path = "./bin/host_discovery_server.rs"
+
 [features]
 network = ["dep:serde", "dep:rmp-serde"]
