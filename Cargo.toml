@@ -21,5 +21,9 @@ name = "coherent_rs"
 name = "host-discovery-server"
 path = "./bin/host_discovery_server.rs"
 
+[[bin]]
+name = "listen-print-discovery"
+path = "./bin/listen_and_print_discovery.rs"
+
 [features]
 network = ["dep:serde", "dep:rmp-serde"]
