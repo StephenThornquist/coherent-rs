@@ -62,6 +62,7 @@ impl Default for DebugLaser{
 
 impl Laser for DebugLaser {
     type CommandEnum = DiscoveryNXCommands;
+    #[cfg(feature = "network")]
     type LaserStatus = DiscoveryNXStatus;
 
     /// Does nothing.
@@ -191,6 +192,7 @@ impl Laser for DebugLaser {
         Err(CoherentError::CommandNotExecutedError)
     }
 
+    #[cfg(feature = "network")]
     fn status(&mut self) -> Result<Self::LaserStatus, CoherentError> {
         Ok(DiscoveryNXStatus {
             echo : self.echo,

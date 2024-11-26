@@ -275,6 +275,7 @@ pub trait Laser: Into<LaserType> + Send {
     fn query<Q : Query>(&mut self, query : Q) -> Result<Q::Result, CoherentError>;
 
     /// Returns a struct containing the current status of the laser
+    #[cfg(feature = "network")]
     fn status(&mut self) -> Result<Self::LaserStatus, CoherentError>;
     
     /// Executes all of the desired queries and returns them

@@ -387,6 +387,8 @@ pub mod DiscoveryNXQueries {
 
 impl Laser for Discovery {
     type CommandEnum = DiscoveryNXCommands;
+    
+    #[cfg(feature = "network")]
     type LaserStatus = DiscoveryNXStatus;
 
     fn send_serial_command(&mut self, command : &str) -> Result<(), CoherentError> {
@@ -578,6 +580,8 @@ impl Laser for Discovery {
         query.parse_result(buf)
     }
 
+    #[cfg(feature = "network")]
+    /// Query the laser for all settings and return a struct containing all of them.
     fn status(&mut self) -> Result<Self::LaserStatus, CoherentError> {
         let echo = self.query(
             DiscoveryNXQueries::Echo{}
