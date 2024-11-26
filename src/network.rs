@@ -306,7 +306,14 @@ impl<L : Laser + 'static> NetworkLaserServer<L> {
                 let mut clients = clients.lock().unwrap();
             
                 let mut laser_lock = _laser.as_ref().unwrap().lock().unwrap();
-                let serialized = laser_lock.serialized_status().unwrap();
+                let serialized = match laser_lock.serialized_status() {
+                    Ok(serialized) => {serialized},
+                    Err(_) => {
+                        eprintln!{"Failed to serialize status"};
+                        continue;
+                    }
+                };
+
                 drop(laser_lock);
 
                 clients.retain(|mut client| {
