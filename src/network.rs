@@ -283,6 +283,8 @@ impl<L : Laser + 'static> NetworkLaserServer<L> {
                                 .map_err(|e| TcpError::SerializationEncodeError(e)).unwrap();
                             self_id.extend(TERMINATOR);
                             stream.write_all(&self_id).unwrap();
+                            stream.set_read_timeout(Some(std::time::Duration::from_millis(100)))
+                                .unwrap();
                             let mut clients = _clients.lock().unwrap();
                             clients.push(stream);
                         },
@@ -304,18 +306,15 @@ impl<L : Laser + 'static> NetworkLaserServer<L> {
         self._polling_thread = Some(std::thread::spawn( move || {
             while _polling.load(std::sync::atomic::Ordering::SeqCst) { 
                 let mut clients = clients.lock().unwrap();
-            
                 let mut laser_lock = _laser.as_ref().unwrap().lock().unwrap();
                 let serialized = match laser_lock.serialized_status() {
                     Ok(serialized) => {serialized},
                     Err(_) => {
-                        eprintln!{"Failed to serialize status"};
                         continue;
                     }
                 };
 
                 drop(laser_lock);
-
                 clients.retain(|mut client| {
                     // Write all in one line
                     let mut to_write = STATUS_MARKER.to_vec();
@@ -323,7 +322,6 @@ impl<L : Laser + 'static> NetworkLaserServer<L> {
                     to_write.extend(TERMINATOR);
                     client.write_all(&to_write).is_ok()
                 });
-                
                 drop(clients);
                 std::thread::sleep(std::time::Duration::from_millis(
                     (*_polling_interval.lock().unwrap() * 1000.0) as u64
@@ -529,8 +527,10 @@ impl<L : Laser> NetworkLaserClient<L> for  BasicNetworkLaserClient<L> {
             .map_err(|e| TcpError::IoError(e))?;
 
         let mut state_stream_buf = [0u8; 1024];
-        while 0 == stream.read(&mut state_stream_buf)
-            .map_err(|e| TcpError::IoError(e))?{};
+        while deserialize_laser_type(&state_stream_buf).is_err() {
+            stream.read(&mut state_stream_buf)
+                .map_err(|e| TcpError::IoError(e))?; // Read until we get the laser type
+        }
 
         let laser_type = deserialize_laser_type(&state_stream_buf).unwrap();
 
@@ -666,7 +666,7 @@ mod tests {
         let discovery = Discovery::find_first().unwrap();
 
         let mut network_laser = NetworkLaserServer::new(
-            discovery, "127.0.0.1:907", 
+            discovery, "127.0.0.1:9070", 
             Some(0.2),
             // None
             ).unwrap();
@@ -679,7 +679,7 @@ mod tests {
 
         assert!(network_laser.polling());
 
-        let mut my_interface = BasicNetworkLaserClient::<Discovery>::connect("127.0.0.1:907").unwrap();
+        let mut my_interface = BasicNetworkLaserClient::<Discovery>::connect("127.0.0.1:9070").unwrap();
         assert_eq!(crate::laser::LaserType::DiscoveryNX, my_interface.get_laser_type());
 
         // print how long the query takes
@@ -689,11 +689,11 @@ mod tests {
         assert_eq!(read_status.variable_shutter, false.into());
 
         assert!(
-            BasicNetworkLaserClient::<DebugLaser>::connect("127.0.0.1:907")
+            BasicNetworkLaserClient::<DebugLaser>::connect("127.0.0.1:9070")
             .is_err()
         );
 
-        let mut second_interface = BasicNetworkLaserClient::<Discovery>::connect("127.0.0.1:907").unwrap();
+        let mut second_interface = BasicNetworkLaserClient::<Discovery>::connect("127.0.0.1:9070").unwrap();
 
         //print how long the command takes
         let start = std::time::Instant::now();
@@ -740,7 +740,7 @@ mod tests {
         let discovery = DebugLaser::find_first().unwrap();
 
         let mut network_laser = NetworkLaserServer::new(
-            discovery, "127.0.0.1:907", 
+            discovery, "127.0.0.1:9070", 
             Some(0.5),
             // None
             ).unwrap();
@@ -753,16 +753,20 @@ mod tests {
 
         assert!(network_laser.polling());
 
-        let mut my_interface = BasicNetworkLaserClient::<DebugLaser>::connect("127.0.0.1:907").unwrap();
+        println!{"Server created"};
+
+        let mut my_interface = BasicNetworkLaserClient::<DebugLaser>::connect("127.0.0.1:9070").unwrap();
         assert_eq!(crate::laser::LaserType::DebugLaser, my_interface.get_laser_type());
+
 
         // print how long the query takes
         let start = std::time::Instant::now();
+        println!{"About to query"};
         let read_status = my_interface.query_status().unwrap();
         println!{"Query took {:?}", start.elapsed()};
         assert_eq!(read_status.variable_shutter, false.into());
 
-        let mut second_interface = BasicNetworkLaserClient::<DebugLaser>::connect("127.0.0.1:907").unwrap();
+        let mut second_interface = BasicNetworkLaserClient::<DebugLaser>::connect("127.0.0.1:9070").unwrap();
 
         //print how long the command takes
         let start = std::time::Instant::now();
@@ -812,7 +816,7 @@ mod tests {
 
         let discovery = Discovery::find_first().unwrap();
 
-        let mut server = NetworkLaserServer::new(discovery, "127.0.0.1:907", Some(0.2))
+        let mut server = NetworkLaserServer::new(discovery, "127.0.0.1:9070", Some(0.2))
             .unwrap(); // polling interval = 200 ms
         server.poll();
 
@@ -826,7 +830,7 @@ mod tests {
         };
 
         // Or you can interact view a client
-        let mut my_client = BasicNetworkLaserClient::<Discovery>::connect("127.0.0.1:907").unwrap();
+        let mut my_client = BasicNetworkLaserClient::<Discovery>::connect("127.0.0.1:9070").unwrap();
 
         println!("{:?}" , my_client.query_status().unwrap());
 
@@ -841,14 +845,14 @@ mod tests {
         let discovery = DebugLaser::find_first().unwrap();
 
         let mut network_laser = NetworkLaserServer::new(
-            discovery, "127.0.0.1:907", 
+            discovery, "127.0.0.1:9070", 
             Some(0.5),
             // None
             ).unwrap();
 
         network_laser.poll().unwrap();
 
-        let mut my_interface = BasicNetworkLaserClient::<DebugLaser>::connect("127.0.0.1:907").unwrap();
+        let mut my_interface = BasicNetworkLaserClient::<DebugLaser>::connect("127.0.0.1:9070").unwrap();
         
         // spam the laser!
         let start = std::time::Instant::now();

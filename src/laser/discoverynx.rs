@@ -1034,7 +1034,10 @@ mod tests {
 
         discovery.set_gdd(current_gdd).map_err(
             |e| {match e {
-                CoherentError::CommandNotExecutedError => discovery.set_gdd(current_gdd).unwrap(),
+                CoherentError::CommandNotExecutedError => {
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    discovery.set_gdd(current_gdd).unwrap()
+                },
                 _ => println!("Error : {:?}", e)
             }}
         ).unwrap();
