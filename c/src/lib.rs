@@ -1,6 +1,7 @@
 //! Thin C ABI layer for the `coherent_rs` crate
 
 use coherent_rs::{laser, Discovery, laser::Laser};
+use coherent_rs::{DiscoveryNXCommands, discoverynx::DiscoveryLaser};
 #[cfg(feature="network")]
 use coherent_rs::network::{BasicNetworkLaserClient, NetworkLaserServer, NetworkLaserClient};
 
@@ -211,6 +212,12 @@ pub extern "C" fn discovery_clear_faults(discovery : *mut Discovery) -> i32 {
     }}
 }
 
+//////////
+//
+// NETWORK FUNCTIONS
+//
+//////////
+
 #[cfg(feature="network")]
 #[no_mangle]
 /// Returns a pointer to a `NetworkLaserServer` object,
@@ -232,3 +239,182 @@ pub extern "C" fn free_discovery_client(client : *mut BasicNetworkLaserClient<Di
     if client.is_null() {return}
     drop(unsafe {Box::from_raw(client)});
 }
+
+#[cfg(feature = "network")]
+#[no_mangle]
+pub extern "C" fn set_discovery_client_variable_shutter(
+    client : *mut BasicNetworkLaserClient<Discovery>,
+    state : bool
+) -> i32 {
+    match unsafe {(*client).command(
+            DiscoveryNXCommands::Shutter{
+                laser : DiscoveryLaser::VariableWavelength,
+                state : if state {laser::ShutterState::Open} else {laser::ShutterState::Closed}
+            }
+    )} {
+        Ok(()) => 0,
+        Err(_) => -1,
+    }
+}
+
+#[cfg(feature = "network")]
+#[no_mangle]
+pub extern "C" fn set_discovery_client_fixed_shutter(
+    client : *mut BasicNetworkLaserClient<Discovery>,
+    state : bool
+) -> i32 {
+    match unsafe {(*client).command(
+            DiscoveryNXCommands::Shutter{
+                laser : DiscoveryLaser::FixedWavelength,
+                state : if state {laser::ShutterState::Open} else {laser::ShutterState::Closed}
+            }
+    )} {
+        Ok(()) => 0,
+        Err(_) => -1,
+    }
+}
+
+#[cfg(feature = "network")]
+#[no_mangle]
+pub extern "C" fn set_discovery_client_wavelength(
+    client : *mut BasicNetworkLaserClient<Discovery>,
+    wavelength : f32,
+) -> i32 {
+    match unsafe {(*client).command(DiscoveryNXCommands::Wavelength{wavelength_nm : wavelength})} {
+        Ok(()) => 0,
+        Err(_) => -1,
+    }
+}
+
+#[cfg(feature = "network")]
+#[no_mangle]
+pub extern "C" fn set_discovery_client_to_standby(
+    client : *mut BasicNetworkLaserClient<Discovery>,
+    to_standby : bool
+) -> i32 {
+    match unsafe {(*client).command(DiscoveryNXCommands::Laser { state: 
+        if to_standby {laser::LaserState::Standby} else {laser::LaserState::On}})} {
+        Ok(()) => 0,
+        Err(_) => -1,
+    }
+}
+
+#[cfg(feature = "network")]
+#[no_mangle]
+pub extern "C" fn set_discovery_client_variable_alignment(
+    client : *mut BasicNetworkLaserClient<Discovery>,
+    alignment : bool
+) -> i32 {
+    match unsafe {(*client).command(DiscoveryNXCommands::AlignmentMode{
+        laser : DiscoveryLaser::VariableWavelength,
+        alignment_mode_on : alignment
+    })} {
+        Ok(()) => 0,
+        Err(_) => -1,
+    }
+}
+
+#[cfg(feature = "network")]
+#[no_mangle]
+pub extern "C" fn set_discovery_client_fixed_alignment(
+    client : *mut BasicNetworkLaserClient<Discovery>,
+    alignment : bool
+) -> i32 {
+    match unsafe {(*client).command(DiscoveryNXCommands::AlignmentMode{
+        laser : DiscoveryLaser::FixedWavelength,
+        alignment_mode_on : alignment
+    })} {
+        Ok(()) => 0,
+        Err(_) => -1,
+    }
+}
+
+#[cfg(feature = "network")]
+#[no_mangle]
+pub extern "C" fn set_discovery_client_gdd(
+    client : *mut BasicNetworkLaserClient<Discovery>,
+    gdd : f32
+) -> i32 {
+    match unsafe {(*client).command(DiscoveryNXCommands::Gdd{gdd_val : gdd})}{
+        Ok(()) => 0,
+        Err(_) => -1,
+    }
+}
+
+#[cfg(feature = "network")]
+#[no_mangle]
+pub extern "C" fn set_discovery_client_gdd_curve(
+    client : *mut BasicNetworkLaserClient<Discovery>,
+    curve : i32
+) -> i32 {
+    if curve > 255 || curve < 0 {
+        return -1;
+    }
+    match unsafe {(*client).command(DiscoveryNXCommands::GddCurve {curve_num : curve as u8})} {
+        Ok(()) => 0,
+        Err(_) => -1,
+    }
+}
+
+
+
+#[cfg(feature = "network")]
+#[repr(C)]
+pub struct CDiscoveryStatus {
+    echo : bool,
+    laser : bool,
+    variable_shutter : bool,
+    fixed_shutter : bool,
+    keyswitch : bool,
+    faults : u8,
+    fault_text : Box<String>,
+    fault_text_len : usize,
+    tuning : bool,
+    alignment_var : bool,
+    alignment_fixed : bool,
+    status : Box<String>,
+    status_len : usize,
+    wavelength : f32,
+    power_var : f32,
+    power_fixed : f32,
+    gdd_curve : i32,
+    gdd_curve_n : Box<String>,
+    gdd_curve_n_len : usize,
+    gdd : f32,
+}
+
+fn discovery_status_to_csafe(status : <Discovery as Laser>::LaserStatus) -> CDiscoveryStatus {
+    CDiscoveryStatus{
+        echo : status.echo,
+        laser : if status.laser == laser::LaserState::On {true} else {false},
+        variable_shutter : if status.variable_shutter == laser::ShutterState::Open {true} else {false},
+        fixed_shutter : if status.fixed_shutter == laser::ShutterState::Open {true} else {false},
+        keyswitch : status.keyswitch,
+        faults : status.faults,
+        fault_text : Box::new(status.fault_text.clone()),
+        fault_text_len : status.fault_text.len(),
+        tuning : if status.tuning == laser::TuningStatus::Tuning {true} else {false},
+        alignment_var : status.alignment_var,
+        alignment_fixed : status.alignment_fixed,
+        status : Box::new(status.status.clone()),
+        status_len : status.status.len(),
+        wavelength : status.wavelength,
+        power_var : status.power_var,
+        power_fixed : status.power_fixed,
+        gdd_curve : status.gdd_curve,
+        gdd_curve_n : Box::new(status.gdd_curve_n.clone()),
+        gdd_curve_n_len : status.gdd_curve_n.len(),
+        gdd : status.gdd,
+    }
+}
+
+#[cfg(feature = "network")]
+#[no_mangle]
+pub extern "C" fn discovery_client_query_status(client : *mut BasicNetworkLaserClient<Discovery>)
+ -> CDiscoveryStatus {
+    match unsafe {(*client).query_status()} {
+        Ok(status) => discovery_status_to_csafe(status),
+        Err(_) => panic!("Error querying status")
+    }
+}
+

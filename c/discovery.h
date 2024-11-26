@@ -26,8 +26,53 @@
 
 #include<cstddef>
 
-typedef void* Discovery;
-typedef void* DiscoveryClient;
+/**
+ * @brief Raw pointer to a `Discovery` object
+ * for calling `Rust` code
+ */
+typedef void *Discovery;
+
+/**
+ * @brief Raw pointer to a `DiscoveryClient` object,
+ * a `BasicLaserNetworkClient<Discovery>` in `Rust`.
+ */
+typedef void *DiscoveryClient;
+// typedef void *DiscoveryStatus;
+
+typedef bool SHUTTER_STATE;
+
+typedef enum {
+    OPEN = true,
+    CLOSED = false
+} ShutterState;
+
+/**
+ * @brief A struct to hold the status of a Discovery device,
+ * closely matching the `DiscoveryStatus` struct in `Rust`.
+ */
+typedef struct DiscoveryStatus {
+    bool echo;
+    bool laser;
+    bool variable_shutter;
+    bool fixed_shutter;
+    bool keyswitch;
+    bool faults;
+    char *fault_text;
+    size_t fault_text_len;
+    bool tuning;
+    bool alignment_var;
+    bool alignment_fixed;
+    char *status;
+    size_t status_len;
+    float wavelength;
+    float power_variable;
+    float power_fixed;
+    int gdd_curve;
+    char *gdd_curve_n;
+    size_t gdd_curve_n_len;
+    float gdd;
+} DiscoveryStatus;
+
 extern "C" {
     /**
      * @brief If unable to find a device, returns nullptr.
@@ -95,7 +140,26 @@ extern "C" {
 
     API_IMPORT bool discovery_get_tuning(Discovery discovery);
 
+    /**
+     * @brief Returns a Status string for the laser. I actually don't know
+     * how much to allocate but probably no more than 256 bytes...
+     * 
+     * @param discovery `Discovery` object to get the status of
+     * @param status `char*` buffer to store the status string. Must be pre-allocated.
+     * @param status_len Returns the length of the status string that was populated.
+     * @return void
+     */
     API_IMPORT void discovery_get_status(Discovery discovery, char* status, size_t* status_len);
+
+    /**
+     * @brief Returns the Fault Text for the laser. I actually don't know how 
+     * much to allocate but probably no more than 256 bytes...
+     * 
+     * @param discovery 
+     * @param fault_text 
+     * @param fault_text_len 
+     * @return int 0 if successful, -1 if an error occurred. 
+     */
     API_IMPORT void discovery_get_fault_text(Discovery discovery, char* fault_text, size_t* fault_text_len);
     API_IMPORT int discovery_clear_faults(Discovery discovery);
 
@@ -110,7 +174,7 @@ extern "C" {
      * 
      * @param port_name Port name of the device to connect to
      * @param port_name_len Length of port_name char array
-     * @return DiscoveryClient or nullptr
+     * @return `DiscoveryClient` or nullptr
      */
     API_IMPORT DiscoveryClient connect_discovery_client(const char* port_name, size_t port_name_len);
 
@@ -121,6 +185,40 @@ extern "C" {
      */
     API_IMPORT void free_discovery_client(DiscoveryClient client);
 
+    /**
+     * @brief Set the connected `Discovery` variable path shutter to the given value.
+     * Open is `true`, closed is `false`.
+     * 
+     * @param client `DiscoveryClient` maintaining a socket connection to a `Server`.
+     * @param shutter_variable `true` for open, `false` for closed.
+     * @return `int` 0 if successful, -1 if an error occurred. 
+     */
+    API_IMPORT int set_discovery_client_variable_shutter(DiscoveryClient client, SHUTTER_STATE shutter_variable);
+
+    /**
+     * @brief Set the connected `Discovery` fixed path shutter to the given value.
+     * Open is `true`, closed is `false`.
+     * 
+     * @param client 
+     * @param shutter_fixed 
+     * @return `int` 0 if successful, -1 if an error occurred.
+     */
+    API_IMPORT int set_discovery_client_fixed_shutter(DiscoveryClient client, SHUTTER_STATE shutter_fixed);
+
+    API_IMPORT int set_discovery_client_wavelength(DiscoveryClient client, float wavelength);
+
+    API_IMPORT int set_discovery_client_to_standby(DiscoveryClient client, bool to_standby);
+
+    API_IMPORT int set_discovery_client_variable_alignment(DiscoveryClient client, bool alignment_on);
+
+    API_IMPORT int set_discovery_client_fixed_alignment(DiscoveryClient client, bool alignment_on);
+
+    API_IMPORT int set_discovery_client_gdd(DiscoveryClient client, float gdd);
+
+    API_IMPORT int set_discovery_client_gdd_curve(DiscoveryClient client, int gdd_curve);
+
+
+    API_IMPORT DiscoveryStatus discovery_client_query_status(DiscoveryClient client);
 #endif // COHERENT_RS_NETWORK
  
 }

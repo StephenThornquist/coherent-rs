@@ -142,7 +142,9 @@ discovery.set_shutter(laser::DiscoveryLaser::FixedWavelength,
 It's slightly frustrating that there's only one USB port on the Coherent lasers,
 because sometimes multiple systems interact with one laser. This crate also contains
 a tool for network communication with classes implementing the `Laser` trait. It relies
-on `serde` and `rmp-serde` to serialize laser commands.
+on `serde` and `rmp-serde` to serialize laser commands. To build these features, you need
+to use the `network` features flag, e.g.:
+`cargo build --release --features network`
 
 ```rust
 use coherent_rs::{Discovery, DiscoveryNXCommands,
@@ -175,7 +177,6 @@ my_client.command(
 
 
 ```
-TODO put these in the `C` API!
 
 ## FFI (C API)
 
@@ -252,3 +253,31 @@ cl /I ./c ./c/example.cpp /link target\release\coherent_rs_c.dll.lib
 Then copy the `coherent_rs_c.dll` (Windows) or `coherent_rs_c.so` from `.\target\release`
 to the main directory (or alternatively, add the dll location to your `PATH`) and you can run
 `example.exe`!
+
+You can also use the network tools in `C/C++`, albeit quite clunkily. Not every
+function has been implemented here either...
+
+```C++
+
+#define COHERENT_RS_NETWORK
+#include "discovery.h"
+#include <iostream>
+#include <chrono>
+#include <thread>
+
+int main() {
+
+    std::string port("127.0.0.1:907");
+
+    DiscoveryClient client = connect_discovery_client(port.c_str(), port.length());
+
+    DiscoveryStatus status = discovery_client_query_status(client);
+
+    std::cout << "Status echo: " << status.echo << std::endl;
+    std::cout << "Status variable shutter: " << status.variable_shutter << std::endl;
+
+    free_discovery_client(client);
+    return 0;
+}
+
+```

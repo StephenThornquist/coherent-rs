@@ -583,6 +583,15 @@ mod tests {
     }
 
     #[test]
+    fn make_floating_server() {
+        let discovery = Discovery::find_first().unwrap();
+        let network_laser = NetworkLaserServer::new(discovery, "127.0.0.1:907", None);
+        let mut network_laser = network_laser.unwrap();
+        network_laser.poll().unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(50));
+    }
+
+    #[test]
     fn get_laser() {
         let discovery = Discovery::find_first().unwrap();
         let network_laser = NetworkLaserServer::new(discovery, "127.0.0.1:907", None);

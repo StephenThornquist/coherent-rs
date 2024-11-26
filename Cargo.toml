@@ -1,4 +1,6 @@
-workspace = { members = ["c"] }
+[workspace]
+members = ["c"]
+
 [package]
 name = "coherent-rs"
 version = "0.1.0"
