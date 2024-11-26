@@ -1,4 +1,6 @@
-workspace = { members = ["c"] }
+[workspace]
+members = ["c"]
+
 [package]
 name = "coherent-rs"
 version = "0.1.0"
@@ -9,6 +11,11 @@ keywords = ["microscopy", "coherent", "laser", "two-photon"]
 
 [dependencies]
 serialport = "4.6.0"
+serde = { version = "1.0", features = ["derive"], optional = true}
+rmp-serde = {version = "*", optional = true}
 
 [lib]
 name = "coherent_rs"
+
+[features]
+network = ["dep:serde", "dep:rmp-serde"]

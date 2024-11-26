@@ -137,6 +137,47 @@ discovery.set_shutter(laser::DiscoveryLaser::FixedWavelength,
         laser::ShutterState::Closed).unwrap();
 ```
 
+## Network
+
+It's slightly frustrating that there's only one USB port on the Coherent lasers,
+because sometimes multiple systems interact with one laser. This crate also contains
+a tool for network communication with classes implementing the `Laser` trait. It relies
+on `serde` and `rmp-serde` to serialize laser commands. To build these features, you need
+to use the `network` features flag, e.g.:
+`cargo build --release --features network`
+
+```rust
+use coherent_rs::{Discovery, DiscoveryNXCommands,
+    network::{NetworkLaserServer, BasicNetworkLaserClient}
+};
+
+let discovery = Discovery::find_first().unwrap();
+
+let mut server = NetworkLaserServer::new(discovery, "127.0.0.1:907", Some(0.2))
+    .unwrap(); // polling interval = 200 ms
+server.poll();
+
+// you can control the laser directly with the Server object if you happen
+// to own it (i.e. you're not a client socket)
+match server.command(
+    DiscoveryNXCommands::Shutter{laser : DiscoveryLaser::VariableWavelength, state : true.into()}
+){
+    Ok(()) => {},
+    Err(_) => {eprintln!{"Failed to call command!"};}
+};
+
+// Or you can interact view a client
+let mut my_client = BasicNetworkLaserClient::<Discovery>::connect("127.0.0.1:907").unwrap();
+
+println!("{:?}" , my_client.query_status().unwrap());
+
+my_client.command(
+    DiscoveryNXCommands::Shutter{laser : DiscoveryLaser::VariableWavelength, state : true.into()}
+).unwrap();
+
+
+```
+
 ## FFI (C API)
 
 This tool was developed in `Rust` to make it behave smoothly and easily across
@@ -160,7 +201,7 @@ int main() {
     }
 
     std::cout << "Device found!" << std::endl;
-    char* serial = new char[256];
+    char *serial = new char[256];
     size_t *serial_len = new size_t;
     discovery_get_serial(discovery, serial, serial_len);
     std::cout << "Serial: "; std::cout.write(serial, *serial_len); std::cout << std::endl;
@@ -212,3 +253,98 @@ cl /I ./c ./c/example.cpp /link target\release\coherent_rs_c.dll.lib
 Then copy the `coherent_rs_c.dll` (Windows) or `coherent_rs_c.so` from `.\target\release`
 to the main directory (or alternatively, add the dll location to your `PATH`) and you can run
 `example.exe`!
+
+You can also use the network tools in `C/C++`, albeit quite clunkily. Not every
+function has been implemented here either...
+
+```C++
+
+/*
+Example code to demonstrate the FFI of the Rust network code with C++
+*/
+
+#define COHERENT_RS_NETWORK
+#include "discovery.h"
+#include <iostream>
+#include <chrono>
+#include <thread>
+
+void print_status(DiscoveryStatus &status) {
+    std::cout << "Status echo: " << status.echo << std::endl;
+    std::cout << "Status laser: " << status.laser << std::endl;
+    std::cout << "Status variable shutter: " << status.variable_shutter << std::endl;
+    std::cout << "Status fixed shutter: " << status.fixed_shutter << std::endl;
+    std::cout << "Status keyswitch: " << status.keyswitch << std::endl;
+    std::cout << "Status faults: " << status.faults << std::endl;
+
+    if (status.fault_text == nullptr) {
+        std::cout << "Status fault text: nullptr" << std::endl;
+    }
+    else {
+
+        std::cout << "Status fault text: ";
+        std::cout.write(status.fault_text, status.fault_text_len);
+        std::cout << std::endl;
+    }
+
+    std::cout << "Status tuning: " << status.tuning << std::endl;
+    std::cout << "Status alignment variable: " << status.alignment_var << std::endl;
+    std::cout << "Status alignment fixed: " << status.alignment_fixed << std::endl;
+    if (status.status == nullptr) {
+        std::cout << "Status status: nullptr" << std::endl;
+    }
+    else {
+        std::cout << "Status status: ";
+        std::cout.write(status.status, status.status_len);
+        std::cout << std::endl;
+    }
+
+    std::cout << "Status wavelength: " << status.wavelength << std::endl;
+    std::cout << "Status power variable: " << status.power_variable << std::endl;
+    std::cout << "Status power fixed: " << status.power_fixed << std::endl;
+    std::cout << "Status gdd curve: " << status.gdd_curve << std::endl;
+
+    if (status.gdd_curve_n == nullptr) {
+        std::cout << "Status gdd curve n: nullptr" << std::endl;
+    }
+    else {
+        std::cout << "Status gdd curve n: ";
+        std::cout.write(status.gdd_curve_n, status.gdd_curve_n_len);
+        std::cout << std::endl;
+    }
+
+    std::cout << "Status gdd: " << status.gdd << std::endl;
+
+}
+
+int main() {
+
+    std::string port("127.0.0.1:907");
+
+    DiscoveryClient client = connect_discovery_client(port.c_str(), port.length());
+
+    DiscoveryStatus status = discovery_client_query_status(client);
+
+    print_status(status);
+
+    // set_discovery_client_variable_shutter(client, true);
+    set_discovery_client_variable_shutter(client, ShutterState::OPEN);
+
+    status = discovery_client_query_status(client);
+
+    std::cout << "Status variable shutter: " << status.variable_shutter << std::endl;
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    set_discovery_client_variable_shutter(client, ShutterState::CLOSED);
+    // set_discovery_client_variable_shutter(client, false);
+
+    status = discovery_client_query_status(client);
+
+    std::cout << "Status variable shutter: " << status.variable_shutter << std::endl;
+
+    free_discovery_client(client);
+    return 0;
+}
+
+```
