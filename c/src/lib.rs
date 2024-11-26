@@ -383,6 +383,7 @@ pub struct CDiscoveryStatus {
     gdd : f32,
 }
 
+#[cfg(feature = "network")]
 fn discovery_status_to_csafe(status : <Discovery as Laser>::LaserStatus) -> CDiscoveryStatus {
     CDiscoveryStatus{
         echo : status.echo,
