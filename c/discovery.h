@@ -51,26 +51,26 @@ typedef enum {
  * closely matching the `DiscoveryStatus` struct in `Rust`.
  */
 typedef struct DiscoveryStatus {
-    bool echo;
-    bool laser;
-    bool variable_shutter;
-    bool fixed_shutter;
-    bool keyswitch;
-    bool faults;
-    char *fault_text;
-    size_t fault_text_len;
-    bool tuning;
-    bool alignment_var;
-    bool alignment_fixed;
-    char *status;
-    size_t status_len;
-    float wavelength;
-    float power_variable;
-    float power_fixed;
-    int gdd_curve;
-    char *gdd_curve_n;
-    size_t gdd_curve_n_len;
-    float gdd;
+const bool echo;
+    const bool laser;
+    const bool variable_shutter;
+    const bool fixed_shutter;
+    const bool keyswitch;
+    const bool faults;
+    const char *fault_text;
+    const size_t fault_text_len;
+    const bool tuning;
+    const bool alignment_var;
+    const bool alignment_fixed;
+    const char *status;
+    const size_t status_len;
+    const float wavelength;
+    const float power_variable;
+    const float power_fixed;
+    const int gdd_curve;
+    const char *gdd_curve_n;
+    const size_t gdd_curve_n_len;
+    const float gdd;
 } DiscoveryStatus;
 
 extern "C" {
