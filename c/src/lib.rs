@@ -3,7 +3,7 @@
 use coherent_rs::{laser, Discovery, laser::Laser};
 use coherent_rs::{DiscoveryNXCommands, discoverynx::DiscoveryLaser};
 #[cfg(feature="network")]
-use coherent_rs::network::{BasicNetworkLaserClient, NetworkLaserClient};
+use coherent_rs::network::{BasicNetworkLaserClient, NetworkLaserClient, TcpError};
 
 /// C ABI
 #[no_mangle]
@@ -253,6 +253,7 @@ pub extern "C" fn set_discovery_client_variable_shutter(
             }
     )} {
         Ok(()) => 0,
+        Err(TcpError::NotPrimaryClient) => -2,
         Err(_) => -1,
     }
 }
@@ -270,6 +271,7 @@ pub extern "C" fn set_discovery_client_fixed_shutter(
             }
     )} {
         Ok(()) => 0,
+        Err(TcpError::NotPrimaryClient) => -2,
         Err(_) => -1,
     }
 }
@@ -282,6 +284,7 @@ pub extern "C" fn set_discovery_client_wavelength(
 ) -> i32 {
     match unsafe {(*client).command(DiscoveryNXCommands::Wavelength{wavelength_nm : wavelength})} {
         Ok(()) => 0,
+        Err(TcpError::NotPrimaryClient) => -2,
         Err(_) => -1,
     }
 }
@@ -295,6 +298,7 @@ pub extern "C" fn set_discovery_client_to_standby(
     match unsafe {(*client).command(DiscoveryNXCommands::Laser { state: 
         if to_standby {laser::LaserState::Standby} else {laser::LaserState::On}})} {
         Ok(()) => 0,
+        Err(TcpError::NotPrimaryClient) => -2,
         Err(_) => -1,
     }
 }
@@ -310,6 +314,7 @@ pub extern "C" fn set_discovery_client_variable_alignment(
         alignment_mode_on : alignment
     })} {
         Ok(()) => 0,
+        Err(TcpError::NotPrimaryClient) => -2,
         Err(_) => -1,
     }
 }
@@ -325,6 +330,7 @@ pub extern "C" fn set_discovery_client_fixed_alignment(
         alignment_mode_on : alignment
     })} {
         Ok(()) => 0,
+        Err(TcpError::NotPrimaryClient) => -2,
         Err(_) => -1,
     }
 }
@@ -337,6 +343,7 @@ pub extern "C" fn set_discovery_client_gdd(
 ) -> i32 {
     match unsafe {(*client).command(DiscoveryNXCommands::Gdd{gdd_val : gdd})}{
         Ok(()) => 0,
+        Err(TcpError::NotPrimaryClient) => -2,
         Err(_) => -1,
     }
 }
@@ -351,6 +358,29 @@ pub extern "C" fn set_discovery_client_gdd_curve(
         return -1;
     }
     match unsafe {(*client).command(DiscoveryNXCommands::GddCurve {curve_num : curve as u8})} {
+        Ok(()) => 0,
+        Err(TcpError::NotPrimaryClient) => -2,
+        Err(_) => -1,
+    }
+}
+
+#[cfg(feature = "network")]
+#[no_mangle]
+pub extern "C" fn demand_primary_client(
+    client : *mut BasicNetworkLaserClient<Discovery>
+) -> i32 {
+    match unsafe {(*client).demand_primary_client()} {
+        Ok(()) => 0,
+        Err(_) => -1,
+    }
+}
+
+#[cfg(feature = "network")]
+#[no_mangle]
+pub extern "C" fn release_primary_client(
+    client : *mut BasicNetworkLaserClient<Discovery>
+) -> i32 {
+    match unsafe {(*client).force_forget_primary_client()} {
         Ok(()) => 0,
         Err(_) => -1,
     }

@@ -301,7 +301,7 @@ extern "C" {
      * 
      * @param client `DiscoveryClient` maintaining a socket connection to a `Server`.
      * @param shutter_variable `true` for open, `false` for closed.
-     * @return `int` 0 if successful, -1 if an error occurred. 
+     * @return `int` 0 if successful, -1 if an error occurred, -2 if the caller is not the primary client
      */
     API_IMPORT int set_discovery_client_variable_shutter(DiscoveryClient client, SHUTTER_STATE shutter_variable);
 
@@ -377,6 +377,23 @@ extern "C" {
      * @return `DiscoveryStatus` struct containing the status of the laser.
      */
     API_IMPORT DiscoveryStatus discovery_client_query_status(DiscoveryClient client);
+
+    /**
+     * @brief Demands to become the primary client of the connected server.
+     * 
+     * @param client 
+     * @return `int` 0 if successful, -1 if there was already a primary client.
+     */
+    API_IMPORT int demand_primary_client(DiscoveryClient client);
+
+    /**
+     * @brief Releases the primary client status of the connected server.
+     * 
+     * @param client 
+     * @return `int` 0 if successful, -1 if an error occured.
+     */
+    API_IMPORT int release_primary_client(DiscoveryClient client);
+
 #endif // COHERENT_RS_NETWORK
  
 }

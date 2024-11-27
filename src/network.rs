@@ -338,24 +338,58 @@ impl<L : Laser + 'static> NetworkLaserServer<L> {
         let _laser = Arc::clone(&self._laser.as_ref().unwrap());
         let _clients = Arc::clone(&self._clients);
         let _polling = self._polling.clone();
-        let _primary_client = self._primary_client.clone();
+        let mut _primary_client = self._primary_client.clone();
 
         self._command_thread = Some(std::thread::spawn( move || {
             while _polling.load(std::sync::atomic::Ordering::SeqCst) {
                 let mut clients = _clients.lock().unwrap();
+                // Iterate across all connected clients
                 for client in clients.iter_mut() {
-                    // if let Some(ref primary_client) = _primary_client {
-                    //     if !Arc::ptr_eq(primary_client, client) {
-                    //         continue;
-                    //     }
-                    // }
                     let mut buf_ptr = 0;
                     let mut buf = [0u8; 1024];
                     match client.read(&mut buf) {
                         Ok(n) => {
                             buf_ptr += n;
+                            // Resolve successful reads in order as:
+                            // 1. Forget primary client
+                            // 2. Demand primary client
+                            // 3. Command
+
+                            if buf[0..buf_ptr].starts_with(FORGET_PRIMARY_CLIENT) {
+                                if let Some(primary_client) = _primary_client.take() {
+                                    if primary_client.try_lock().is_ok() {
+                                        client.write_all(COMMAND_SUCCESSFUL).unwrap();
+                                    }
+                                    else {
+                                        client.write_all(COMMAND_FAILED).unwrap();
+                                    }
+                                }
+                                else{
+                                    client.write_all(COMMAND_SUCCESSFUL).unwrap();
+                                }
+                            }
+
+                            if buf[0..buf_ptr].starts_with(DEMAND_PRIMARY_CLIENT) {
+                                if _primary_client.is_none() {
+                                    _primary_client.replace(
+                                        Arc::new(Mutex::new(client.try_clone().unwrap()))
+                                    );
+                                    client.write_all(COMMAND_SUCCESSFUL).unwrap();
+                                }
+                                else {
+                                    client.write_all(NOT_PRIMARY_CLIENT).unwrap();
+                                }
+                            }
+
                             // If a command is in the buffer, execute it.
                             if let Ok(command) = deserialize_command::<L>(&buf[0..buf_ptr]) {
+                                // unless you're not the primary client
+                                if _primary_client.is_some() &&
+                                    ( _primary_client.as_ref().unwrap().try_lock().unwrap().peer_addr().unwrap()
+                                    != client.peer_addr().unwrap()) {
+                                    client.write_all(NOT_PRIMARY_CLIENT).unwrap();
+                                    continue;
+                                }
                                 let mut laser = _laser.lock().unwrap();
                                 match laser.send_command(command) {
                                     Ok(_) => {
@@ -506,6 +540,60 @@ pub trait NetworkLaserClient<L : Laser> : Sized {
             }
         }
     }
+
+    /// Demand that the client be the primary client.
+    /// If the network already has a primary client, this will fail
+    /// and return a `TcpError::NotPrimaryClient`. Will block until
+    /// it receives confirmation.
+    fn demand_primary_client(&mut self) -> Result<(), TcpError> {
+        self.access_stream().write_all(DEMAND_PRIMARY_CLIENT)
+            .map_err(|e| TcpError::IoError(e))?;
+        let mut response = [0u8; 1024];
+        let mut response_ptr = 0;
+        loop {
+            match self.access_stream().read(&mut response) {
+                Ok(n) => {
+                    response_ptr += n;
+                    if response[0..response_ptr].starts_with(COMMAND_SUCCESSFUL) {
+                        return Ok(());
+                    }
+                    else if response[0..response_ptr].starts_with(NOT_PRIMARY_CLIENT) {
+                        return Err(TcpError::NotPrimaryClient);
+                    }
+                },
+                Err(e) => { // stream is dead, or I/O error occurred
+                    return Err(TcpError::IoError(e));
+                }
+            }
+        }
+    }
+
+    /// Forces the server to forget the primary client. Will block until
+    /// it receives confirmation.
+    fn force_forget_primary_client(&mut self) -> Result<(), TcpError> {
+        self.access_stream().write_all(FORGET_PRIMARY_CLIENT)
+            .map_err(|e| TcpError::IoError(e))?;
+
+        let mut response = [0u8; 1024];
+        let mut response_ptr = 0;
+        loop {
+            match self.access_stream().read(&mut response) {
+                Ok(n) => {
+                    response_ptr += n;
+                    if response[0..response_ptr].starts_with(COMMAND_SUCCESSFUL) {
+                        return Ok(());
+                    }
+                    else if response[0..response_ptr].starts_with(COMMAND_FAILED) {
+                        return Err(TcpError::CommandError);
+                    }
+                },
+                Err(e) => { // stream is dead, or I/O error occurred
+                    return Err(TcpError::IoError(e));
+                }
+            }
+        }
+    }
+
 }
 
 /// A struct to generically connect to and communicate with a
@@ -866,4 +954,58 @@ mod tests {
         }
         println!{"Spamming took {:?}", start.elapsed()};
     }
+
+    /// Test primary client functionality on a debug laser
+    #[test]
+    fn test_primary_client_debug() {
+        let discovery = DebugLaser::find_first().unwrap();
+
+        let mut network_laser = NetworkLaserServer::new(
+            discovery, "127.0.0.1:9070",
+            Some(0.5),
+        ).unwrap();
+
+        network_laser.poll().unwrap();
+
+        let mut my_interface = BasicNetworkLaserClient::<DebugLaser>::connect(
+            "127.0.0.1:9070",
+        ).unwrap();
+
+        let mut second_interface = BasicNetworkLaserClient::<DebugLaser>::connect(
+            "127.0.0.1:9070",
+        ).unwrap();
+
+        my_interface.command(
+            DiscoveryNXCommands::Shutter{laser : DiscoveryLaser::VariableWavelength, state : true.into()}
+        ).unwrap();
+
+        let shutter = network_laser.status().unwrap().variable_shutter;
+        assert_eq!(shutter, true.into());
+
+        assert!(my_interface.demand_primary_client().is_ok());
+
+        assert!(second_interface.demand_primary_client().is_err());
+
+        match second_interface.command(
+                DiscoveryNXCommands::Shutter{laser : DiscoveryLaser::VariableWavelength, state : false.into()}
+            ){
+                Ok(()) => {panic!("Shouldn't be able to command without being primary client")},
+                Err(TcpError::NotPrimaryClient) => {},
+                Err(e) => {panic!("Unexpected error : {:?}", e);}
+            }
+
+        assert!(my_interface.force_forget_primary_client().is_ok());
+        
+        assert!(
+            second_interface.command(
+                DiscoveryNXCommands::Shutter{laser : DiscoveryLaser::VariableWavelength, state : false.into()}
+            ).is_ok()
+        );
+
+        assert_eq!(network_laser.status().unwrap().variable_shutter, false.into());
+
+        assert!(second_interface.demand_primary_client().is_ok());
+        
+    }
+    
 }
