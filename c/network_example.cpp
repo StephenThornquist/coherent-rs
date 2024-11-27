@@ -69,18 +69,18 @@ int main() {
     // set_discovery_client_variable_shutter(client, true);
     set_discovery_client_variable_shutter(client, ShutterState::OPEN);
 
-    status = discovery_client_query_status(client);
+    DiscoveryStatus newStatus = discovery_client_query_status(client);
 
-    std::cout << "Status variable shutter: " << status.variable_shutter << std::endl;
+    std::cout << "Status variable shutter: " << newStatus.variable_shutter << std::endl;
 
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
     set_discovery_client_variable_shutter(client, ShutterState::CLOSED);
     // set_discovery_client_variable_shutter(client, false);
 
-    status = discovery_client_query_status(client);
+    DiscoveryStatus thirdStatus = discovery_client_query_status(client);
 
-    std::cout << "Status variable shutter: " << status.variable_shutter << std::endl;
+    std::cout << "Status variable shutter: " << thirdStatus.variable_shutter << std::endl;
 
     free_discovery_client(client);
     return 0;

@@ -51,7 +51,7 @@ typedef enum {
  * closely matching the `DiscoveryStatus` struct in `Rust`.
  */
 typedef struct DiscoveryStatus {
-const bool echo;
+    const bool echo;
     const bool laser;
     const bool variable_shutter;
     const bool fixed_shutter;
