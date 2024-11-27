@@ -387,7 +387,8 @@ extern "C" {
     API_IMPORT int demand_primary_client(DiscoveryClient client);
 
     /**
-     * @brief Releases the primary client status of the connected server.
+     * @brief Releases the primary client status of the connected server
+     * if the caller is the primary client.
      * 
      * @param client 
      * @return `int` 0 if successful, -1 if an error occured.

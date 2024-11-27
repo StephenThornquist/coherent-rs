@@ -26,6 +26,7 @@ pub const COMMAND_FAILED : &[u8] = b"COMMAND FAILED\n";
 pub const NOT_PRIMARY_CLIENT : &[u8] = b"NOT PRIMARY CLIENT\n";
 pub const DEMAND_PRIMARY_CLIENT : &[u8] = b"DEMAND PRIMARY CLIENT\n";
 pub const FORGET_PRIMARY_CLIENT : &[u8] = b"FORGET PRIMARY CLIENT\n";
+pub const FORGET_ME : &[u8] = b"FORGET ME\n";
 
 /// Errors during communication with the laser over the network.
 #[derive(Debug)]
@@ -353,7 +354,8 @@ impl<L : Laser + 'static> NetworkLaserServer<L> {
                             // Resolve successful reads in order as:
                             // 1. Forget primary client
                             // 2. Demand primary client
-                            // 3. Command
+                            // 3. Forget me
+                            // 4. Command
 
                             if buf[0..buf_ptr].starts_with(FORGET_PRIMARY_CLIENT) {
                                 if let Some(primary_client) = _primary_client.take() {
@@ -378,6 +380,18 @@ impl<L : Laser + 'static> NetworkLaserServer<L> {
                                 }
                                 else {
                                     client.write_all(NOT_PRIMARY_CLIENT).unwrap();
+                                }
+                            }
+
+                            if buf[0..buf_ptr].starts_with(FORGET_ME) {
+                                if _primary_client.is_some() &&
+                                    ( _primary_client.as_ref().unwrap().try_lock().unwrap().peer_addr().unwrap()
+                                    == client.peer_addr().unwrap()) {
+                                    _primary_client = None;
+                                    client.write_all(COMMAND_SUCCESSFUL).unwrap();
+                                }
+                                else {
+                                    client.write_all(COMMAND_FAILED).unwrap();
                                 }
                             }
 
@@ -461,6 +475,52 @@ impl<L : Laser + 'static> Drop for NetworkLaserServer<L> {
     }
 }
 
+/// Boilerplate for sending a command and waiting for the few
+/// types of responses from the `Server`.
+/// 
+/// # Syntax
+/// 
+/// `call_and_wait_for_response!($self : ident, $command : expr)`
+/// 
+/// # Example
+/// ```rust
+/// let mut buf = Vec::new();
+/// buf.extend(COMMAND_MARKER);
+/// command.serialize(&mut Serializer::new(&mut buf))
+///     .map_err(|e| TcpError::SerializationEncodeError(e))?;
+/// buf.extend(TERMINATOR);
+/// call_and_wait_for_response!(self, &buf);
+/// ```
+macro_rules! call_and_wait_for_response {
+    ($self:ident, $command:expr) => {
+        $self.access_stream().write_all($command)
+            .map_err(|e| TcpError::IoError(e))?;
+
+        // Wait for command evaluation
+        let mut response = [0u8; 1024];
+        let mut response_ptr = 0;
+        loop {
+            match $self.access_stream().read(&mut response) {
+                Ok(n) => {
+                    response_ptr += n;
+                    if response[0..response_ptr].starts_with(COMMAND_SUCCESSFUL) {
+                        return Ok(());
+                    }
+                    else if response[0..response_ptr].starts_with(COMMAND_FAILED) {
+                        return Err(TcpError::CommandError);
+                    }
+                    else if response[0..response_ptr].starts_with(NOT_PRIMARY_CLIENT) {
+                        return Err(TcpError::NotPrimaryClient);
+                    }
+                },
+                Err(e) => { // stream is dead, or I/O error occurred
+                    return Err(TcpError::IoError(e));
+                }
+            }
+        }
+    }
+}
+
 /// A trait for a network interface to a laser. The laser type is determined
 /// by the `Laser` type parameter. Individual structs that implement this trait
 /// can also implement `Laser`-specific methods. The actual implementation of the
@@ -488,31 +548,7 @@ pub trait NetworkLaserClient<L : Laser> : Sized {
         command.serialize(&mut Serializer::new(&mut buf))
             .map_err(|e| TcpError::SerializationEncodeError(e))?;
         buf.extend(TERMINATOR);
-        self.access_stream().write_all(buf.as_slice())
-            .map_err(|e| TcpError::IoError(e))?;
-
-        // Wait for command evaluation
-        let mut response = [0u8; 1024];
-        let mut response_ptr = 0;
-        loop {
-            match self.access_stream().read(&mut response) {
-                Ok(n) => {
-                    response_ptr += n;
-                    if response[0..response_ptr].starts_with(COMMAND_SUCCESSFUL) {
-                        return Ok(());
-                    }
-                    else if response[0..response_ptr].starts_with(COMMAND_FAILED) {
-                        return Err(TcpError::CommandError);
-                    }
-                    else if response[0..response_ptr].starts_with(NOT_PRIMARY_CLIENT) {
-                        return Err(TcpError::NotPrimaryClient);
-                    }
-                },
-                Err(e) => { // stream is dead, or I/O error occurred
-                    return Err(TcpError::IoError(e));
-                }
-            }
-        }
+        call_and_wait_for_response!(self, &buf);
     }
     
     /// Returns a full status of the laser from the network. Warning: blocking!
@@ -526,7 +562,6 @@ pub trait NetworkLaserClient<L : Laser> : Sized {
                 return Ok(status);
             }
 
-            let now = std::time::Instant::now();
             // Read more data from the stream
             match self.access_stream().read(&mut buf) {
                 Ok(n) => {
@@ -546,52 +581,23 @@ pub trait NetworkLaserClient<L : Laser> : Sized {
     /// and return a `TcpError::NotPrimaryClient`. Will block until
     /// it receives confirmation.
     fn demand_primary_client(&mut self) -> Result<(), TcpError> {
-        self.access_stream().write_all(DEMAND_PRIMARY_CLIENT)
-            .map_err(|e| TcpError::IoError(e))?;
-        let mut response = [0u8; 1024];
-        let mut response_ptr = 0;
-        loop {
-            match self.access_stream().read(&mut response) {
-                Ok(n) => {
-                    response_ptr += n;
-                    if response[0..response_ptr].starts_with(COMMAND_SUCCESSFUL) {
-                        return Ok(());
-                    }
-                    else if response[0..response_ptr].starts_with(NOT_PRIMARY_CLIENT) {
-                        return Err(TcpError::NotPrimaryClient);
-                    }
-                },
-                Err(e) => { // stream is dead, or I/O error occurred
-                    return Err(TcpError::IoError(e));
-                }
-            }
-        }
+        call_and_wait_for_response!(
+            self, DEMAND_PRIMARY_CLIENT
+        );
+    }
+
+    fn forget_me(&mut self) -> Result<(), TcpError> {
+        call_and_wait_for_response!(
+            self, FORGET_ME
+        );
     }
 
     /// Forces the server to forget the primary client. Will block until
     /// it receives confirmation.
     fn force_forget_primary_client(&mut self) -> Result<(), TcpError> {
-        self.access_stream().write_all(FORGET_PRIMARY_CLIENT)
-            .map_err(|e| TcpError::IoError(e))?;
-
-        let mut response = [0u8; 1024];
-        let mut response_ptr = 0;
-        loop {
-            match self.access_stream().read(&mut response) {
-                Ok(n) => {
-                    response_ptr += n;
-                    if response[0..response_ptr].starts_with(COMMAND_SUCCESSFUL) {
-                        return Ok(());
-                    }
-                    else if response[0..response_ptr].starts_with(COMMAND_FAILED) {
-                        return Err(TcpError::CommandError);
-                    }
-                },
-                Err(e) => { // stream is dead, or I/O error occurred
-                    return Err(TcpError::IoError(e));
-                }
-            }
-        }
+        call_and_wait_for_response!(
+            self, FORGET_PRIMARY_CLIENT
+        );
     }
 
 }
@@ -994,7 +1000,9 @@ mod tests {
                 Err(e) => {panic!("Unexpected error : {:?}", e);}
             }
 
-        assert!(my_interface.force_forget_primary_client().is_ok());
+        assert!(second_interface.forget_me().is_err());
+
+        assert!(my_interface.forget_me().is_ok());
         
         assert!(
             second_interface.command(
@@ -1005,6 +1013,16 @@ mod tests {
         assert_eq!(network_laser.status().unwrap().variable_shutter, false.into());
 
         assert!(second_interface.demand_primary_client().is_ok());
+
+        assert!(my_interface.force_forget_primary_client().is_ok());
+
+        assert!(
+            my_interface.command(
+                DiscoveryNXCommands::Shutter{laser : DiscoveryLaser::VariableWavelength, state : true.into()}
+            ).is_ok()
+        );
+
+        assert_eq!(network_laser.status().unwrap().variable_shutter, true.into());
         
     }
     

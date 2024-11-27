@@ -380,7 +380,7 @@ pub extern "C" fn demand_primary_client(
 pub extern "C" fn release_primary_client(
     client : *mut BasicNetworkLaserClient<Discovery>
 ) -> i32 {
-    match unsafe {(*client).force_forget_primary_client()} {
+    match unsafe {(*client).forget_me()} {
         Ok(()) => 0,
         Err(_) => -1,
     }

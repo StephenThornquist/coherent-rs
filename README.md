@@ -175,8 +175,15 @@ my_client.command(
     DiscoveryNXCommands::Shutter{laser : DiscoveryLaser::VariableWavelength, state : true.into()}
 ).unwrap();
 
-
 ```
+
+There is also `primary_client` functionality -- a client can demand to become the 
+primary client, and if no primary client already exists for a `Server`, it will
+become the _only_ client allowed to issue commands (all can still query). 
+
+In emergencies, you can use the `force_forget_primary_client` function, which will
+just clear the `Server`s primary client. It is recommended that you not expose this
+backdoor in public-facing APIs.
 
 ## FFI (C API)
 

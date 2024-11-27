@@ -1,5 +1,5 @@
-//! Listen to a Coherent laser on a network server with a port specified in the command line.
-
+//! Forces a `Server` at a port to forget its primary client
+//! 
 use coherent_rs::Discovery;
 #[cfg(feature = "network")]
 use coherent_rs::network::{NetworkLaserClient,BasicNetworkLaserClient};
@@ -23,8 +23,14 @@ fn main() {
     match client {
         Ok(mut client) => {
             println!("Client connected to port {}", port);
-            loop {
-                println!{"{:?}",client.query_status().unwrap()};
+            match client.force_forget_primary_client() {
+                Ok(_) => {
+                    println!("Primary client forgotten");
+                },
+                Err(e) => {
+                    eprintln!("Error: {:?}", e);
+                    std::process::exit(1);
+                }
             }
             return ();
         }

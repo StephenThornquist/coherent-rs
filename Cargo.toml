@@ -22,6 +22,10 @@ name = "host-discovery-server"
 path = "./bin/host_discovery_server.rs"
 
 [[bin]]
+name = "force-free-discovery"
+path = "./bin/force_free_discovery.rs"
+
+[[bin]]
 name = "listen-print-discovery"
 path = "./bin/listen_and_print_discovery.rs"
 
