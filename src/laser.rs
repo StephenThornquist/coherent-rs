@@ -190,51 +190,43 @@ pub trait Laser: Into<LaserType> + Send {
     /// let discovery = Discovery::new(Some("COM5"), Some("123456")).unwrap();
     /// ```
     fn new(port_name : Option<&str>, serial_number : Option<&str>) -> Result<Self, CoherentError>{
-
-        // Nested cases
-        match port_name {
-            Some(port_name) => {
-                let port_info = serialport::available_ports().unwrap().into_iter().filter(|port| {
-                    port.port_name == port_name
-                }).next().ok_or(CoherentError::UnrecognizedDevice)?;
-                
-                match serial_number {
-                    Some(serial) => {
-                        match &port_info.port_type {
-                            serialport::SerialPortType::UsbPort(info) => {
-                                if info.serial_number == Some(serial.to_string()) {
-                                    Self::from_port_info(&port_info)
-                                } else {
-                                    Err(CoherentError::UnrecognizedDevice)
-                                }
-                            },
-                            _ => Err(CoherentError::UnrecognizedDevice)
-                        }
-                    },
-                    None => Self::from_port_info(&port_info)
+        if let Some(name) = port_name {
+            let port_info = serialport::available_ports()?
+                .into_iter()
+                .find(|port| port.port_name == name)
+                .ok_or(CoherentError::UnrecognizedDevice)?;
+    
+            if let Some(serial) = serial_number {
+                if let serialport::SerialPortType::UsbPort(info) = &port_info.port_type {
+                    if info.serial_number.as_deref() != Some(&serial) {
+                        return Err(CoherentError::UnrecognizedDevice);
+                    }
+                } else {
+                    return Err(CoherentError::UnrecognizedDevice);
                 }
             }
-            None => {
-                match serial_number {
-                    Some(serial) => {
-                        let port_info = serialport::available_ports().unwrap().into_iter().filter(|port| {
-                            Self::is_valid_device(port)
-                        }).next().ok_or(CoherentError::UnrecognizedDevice)?;
-                        match &port_info.port_type {
-                            serialport::SerialPortType::UsbPort(info) => {
-                                if info.serial_number == Some(serial.to_string()) {
-                                    Self::from_port_info(&port_info)
-                                } else {
-                                    Err(CoherentError::UnrecognizedDevice)
-                                }
-                            },
-                            _ => Err(CoherentError::UnrecognizedDevice)
-                        }
-                    },
-                    None => Self::find_first()
-                }
-            }
+    
+            return Self::from_port_info(&port_info);
         }
+    
+        if let Some(serial) = serial_number {
+            let port_info = serialport::available_ports()?
+                .into_iter()
+                .find(|port| Self::is_valid_device(port))
+                .ok_or(CoherentError::UnrecognizedDevice)?;
+    
+            if let serialport::SerialPortType::UsbPort(info) = &port_info.port_type {
+                if info.serial_number.as_deref() != Some(&serial) {
+                    return Err(CoherentError::UnrecognizedDevice);
+                }
+            } else {
+                return Err(CoherentError::UnrecognizedDevice);
+            }
+    
+            return Self::from_port_info(&port_info);
+        }
+    
+        Self::find_first()
     }
 
     /// Send a command to the laser directly over the serial port. Maybe I shouldn't expose this in the trait??
