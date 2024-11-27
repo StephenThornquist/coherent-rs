@@ -206,7 +206,7 @@ pub mod DiscoveryNXQueries {
     impl Query for Faults {
         type Result = u8;
         fn parse_result(&self, result : &str) -> Result<Self::Result, CoherentError> {
-            Ok(result.parse().unwrap())
+            Ok(result.parse().map_err(|_| CoherentError::InvalidResponseError(result.to_string()))?)
         }
     }
 
@@ -299,7 +299,7 @@ pub mod DiscoveryNXQueries {
     impl Query for Wavelength {
         type Result = f32;
         fn parse_result(&self, result : &str) -> Result<Self::Result, CoherentError> {
-            Ok(result.parse().unwrap())
+            Ok(result.parse::<f32>().map_err(|_| CoherentError::InvalidResponseError(result.to_string()))?)
         }
     }
 
@@ -319,7 +319,7 @@ pub mod DiscoveryNXQueries {
     impl Query for Power {
         type Result = f32;
         fn parse_result(&self, result : &str) -> Result<Self::Result, CoherentError> {
-            Ok(result.parse().unwrap())
+            Ok(result.parse().map_err(|_| CoherentError::InvalidResponseError(result.to_string()))?)
         }
     }
 
@@ -334,7 +334,7 @@ pub mod DiscoveryNXQueries {
     impl Query for GddCurve {
         type Result = i32;
         fn parse_result(&self, result : &str) -> Result<Self::Result, CoherentError> {
-            Ok(result.parse().unwrap())
+            Ok(result.parse().map_err(|_| CoherentError::InvalidResponseError(result.to_string()))?)
         }
     }
 
@@ -364,7 +364,7 @@ pub mod DiscoveryNXQueries {
     impl Query for Gdd {
         type Result = f32;
         fn parse_result(&self, result : &str) -> Result<Self::Result, CoherentError> {
-            Ok(result.parse().unwrap())
+            Ok(result.parse().map_err(|_| CoherentError::InvalidResponseError(result.to_string()))?)
         }
     }
     
@@ -432,12 +432,15 @@ impl Laser for Discovery {
     /// let discovery = DiscoveryNX::from_port_info(&port_info);
     /// ```
     fn from_port_info(serialportinfo : &serialport::SerialPortInfo)-> Result<Self, CoherentError> {
-        let mut serial_port = serialport::new(&serialportinfo.port_name, BAUDRATE)
+        let mut serial_port = match serialport::new(&serialportinfo.port_name, BAUDRATE)
             .data_bits(DATABITS)
             .stop_bits(STOPBITS)
             .parity(PARITY)
             .timeout(std::time::Duration::from_secs(2))
-            .open().unwrap();
+            .open() {
+                Ok(port) => port,
+                Err(e) => return Err(CoherentError::SerialError(e)),
+            };
 
         serial_port.clear(serialport::ClearBuffer::Input)
             .map_err(|e| CoherentError::SerialError(e))?;
@@ -446,7 +449,9 @@ impl Laser for Discovery {
         serial_port.write_all("?E\r\n".to_string().as_bytes()).map_err(
             |e| CoherentError::WriteError(e)
         )?;
-        serial_port.flush().unwrap();
+        serial_port.flush().map_err(
+            |e| CoherentError::WriteError(e)
+        )?;
 
         // Read the result
         let mut buf = String::new();

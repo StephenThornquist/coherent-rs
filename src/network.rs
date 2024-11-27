@@ -24,6 +24,8 @@ pub const LASER_ID : &[u8] = b"Laser ID: ";
 pub const COMMAND_SUCCESSFUL : &[u8] = b"COMMAND SUCCESSFUL\n";
 pub const COMMAND_FAILED : &[u8] = b"COMMAND FAILED\n";
 pub const NOT_PRIMARY_CLIENT : &[u8] = b"NOT PRIMARY CLIENT\n";
+pub const DEMAND_PRIMARY_CLIENT : &[u8] = b"DEMAND PRIMARY CLIENT\n";
+pub const FORGET_PRIMARY_CLIENT : &[u8] = b"FORGET PRIMARY CLIENT\n";
 
 /// Errors during communication with the laser over the network.
 #[derive(Debug)]
