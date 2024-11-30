@@ -2,7 +2,7 @@
 name = "coherent-rs-c"
 version = "0.1.0"
 edition = "2021"
-license = "GPL-3.0"
+license = "LGPL-3.0"
 description = "Extremely thin FFI wrapper for `coherent-rs` to be used in C"
 keywords = ["microscopy", "coherent", "laser", "two-photon"]
 
