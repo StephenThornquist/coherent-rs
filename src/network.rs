@@ -42,6 +42,12 @@ pub enum TcpError {
     NotPrimaryClient,
 }
 
+impl<T> Into<TcpError> for std::sync::PoisonError<T> {
+    fn into(self) -> TcpError {
+        TcpError::MutexPoisoned
+    }
+}
+
 /// A `Laser` with a network listener that can be used to control
 /// the laser in addition to the normal `Laser` methods. Takes ownership
 /// of the `Laser` and maintains exclusive access through a `Mutex`.
@@ -281,9 +287,10 @@ impl<L : Laser + 'static> NetworkLaserServer<L> {
                     match stream {
                         Ok(mut stream) => {
                             let mut self_id = LASER_ID.to_vec();
-                            L::into_laser_type().serialize(
+                            if L::into_laser_type().serialize(
                                 &mut Serializer::new(&mut self_id))
-                                .map_err(|e| TcpError::SerializationEncodeError(e)).unwrap();
+                                .is_err(){ continue; } // is this ok?
+                                // .map_err(|e| TcpError::SerializationEncodeError(e)).unwrap();
                             self_id.extend(TERMINATOR);
                             stream.write_all(&self_id).unwrap();
                             stream.set_read_timeout(Some(std::time::Duration::from_millis(100)))
@@ -904,6 +911,22 @@ mod tests {
         assert!(!network_laser.polling());
     }
 
+    /// Tests the case where the Mutex becomes poisoned -- should
+    /// re-connect and continue polling.
+    #[test]
+    fn test_poisoned_mutex(){
+        use crate::{laser::debug::DebugLaser, laser::DiscoveryNXCommands,
+            network::{NetworkLaserServer, BasicNetworkLaserClient}
+        };
+
+        let discovery = DebugLaser::find_first().unwrap();
+
+        let mut server = NetworkLaserServer::new(discovery, "127.0.0.1:999", Some(0.2))
+            .unwrap(); // polling interval = 200 ms
+        server.poll().unwrap();
+
+    }
+
     #[test]
     fn test_readme_functionality(){
         use crate::{Discovery, DiscoveryNXCommands,
@@ -914,7 +937,7 @@ mod tests {
 
         let mut server = NetworkLaserServer::new(discovery, "127.0.0.1:9070", Some(0.2))
             .unwrap(); // polling interval = 200 ms
-        server.poll();
+        server.poll().unwrap();
 
         // you can control the laser directly with the Server object if you happen
         // to own it (i.e. you're not a client socket)

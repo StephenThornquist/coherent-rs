@@ -3,7 +3,7 @@
 use coherent_rs::{laser, Discovery, laser::Laser};
 use coherent_rs::{DiscoveryNXCommands, discoverynx::DiscoveryLaser};
 #[cfg(feature="network")]
-use coherent_rs::network::{BasicNetworkLaserClient, NetworkLaserClient, TcpError};
+use coherent_rs::network::{BasicNetworkLaserClient, NetworkLaserClient, NetworkLaserServer, TcpError};
 
 /// C ABI
 #[no_mangle]
@@ -23,8 +23,10 @@ pub unsafe extern "C" fn free_discovery(laser : *mut Discovery) {
 #[no_mangle]
 pub unsafe extern "C" fn discovery_by_port_name(port_name : *const u8, port_name_len : usize) -> *mut Discovery {
     let port_name = unsafe {
-        std::str::from_utf8(std::slice::from_raw_parts(port_name, port_name_len)).unwrap()
+        std::str::from_utf8(std::slice::from_raw_parts(port_name, port_name_len))
+        .map_err(|_| {return std::ptr::null_mut::<Discovery>();}).unwrap()
     };
+
     match Discovery::from_port_name(port_name) {
         Ok(discovery) => Box::into_raw(Box::new(discovery)),
         Err(_) => std::ptr::null_mut()
@@ -390,6 +392,7 @@ pub extern "C" fn release_primary_client(
 
 #[cfg(feature = "network")]
 #[repr(C)]
+#[derive(Debug)]
 pub struct CDiscoveryStatus {
     echo : bool,
     laser : bool,
@@ -449,3 +452,83 @@ pub extern "C" fn discovery_client_query_status(client : *mut BasicNetworkLaserC
     }
 }
 
+#[cfg(feature = "network")]
+#[no_mangle]
+pub extern "C" fn host_discovery_server(laser : *mut Discovery, port : *const u8, port_len : usize) -> *mut NetworkLaserServer<Discovery> {
+
+    let port = unsafe {
+        std::str::from_utf8(std::slice::from_raw_parts(port, port_len)).unwrap()
+    };
+
+    let owned_laser = unsafe { Box::from_raw(laser) };
+
+    match NetworkLaserServer::<Discovery>::new(*owned_laser, port, None) {
+    Ok(client) => Box::into_raw(Box::new(client)),
+    Err(e) => {println!("{:?}", e); std::ptr::null_mut()}
+    }
+}
+
+#[cfg(feature = "network")]
+#[no_mangle]
+pub extern "C" fn poll_server(server : *mut NetworkLaserServer<Discovery>) -> i32 {
+    match unsafe {(*server).poll()} {
+        Ok(_) => 0,
+        Err(_) => -1,
+    }
+}
+
+#[cfg(feature = "network")]
+#[no_mangle]
+pub extern "C" fn stop_polling(server : *mut NetworkLaserServer<Discovery>) {
+    if server.is_null() {return}
+    unsafe {(*server).stop_polling()}
+}
+
+#[cfg(feature = "network")]
+#[no_mangle]
+pub extern "C" fn free_server(server : *mut NetworkLaserServer<Discovery>) {
+    if server.is_null() {return}
+    drop(unsafe {Box::from_raw(server)});
+}
+
+#[cfg(test)]
+mod tests{
+    use coherent_rs;
+    use coherent_rs::laser::Laser;
+    #[cfg(feature="network")]
+    use coherent_rs::network::{NetworkLaserServer};
+
+    #[cfg(feature = "network")]
+    #[test]
+    /// Test what happens if the client disconnects
+    fn disconnected_server() {
+
+        // First set up a functional relationship
+        let laser = coherent_rs::Discovery::find_first();
+        assert!(laser.is_ok());
+        let laser = laser.unwrap();
+        let port = "127.0.0.1:907";
+        let network_laser = NetworkLaserServer::new(laser, port, Some(1.0));
+        
+        assert!(network_laser.is_ok());
+        let mut network_laser = network_laser.unwrap();
+        assert!(network_laser.poll().is_ok());
+
+
+        let mut client = super::connect_discovery_client(
+            port.as_ptr() as *const u8, port.len()
+        );
+        assert!(!client.is_null());
+
+        let status = super::discovery_client_query_status(client);
+        print!("{:?}", status);
+
+        // Okay now the test begins. The server stops polling -- or worse, dies! -- and the client requests.
+        println!("Begin test!\n\n");
+        network_laser.stop_polling();
+        drop(network_laser);
+        let status = super::discovery_client_query_status(client);
+        print!("{:?}", status);
+
+    }
+}

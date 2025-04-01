@@ -26,7 +26,6 @@ fn main() {
             loop {
                 println!{"{:?}",client.query_status().unwrap()};
             }
-            return ();
         }
         Err(e) => {
             eprintln!("Error: {:?}", e);

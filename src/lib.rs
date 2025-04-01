@@ -52,7 +52,7 @@ impl From<serialport::Error> for CoherentError {
 /// }
 /// ```
 pub fn get_all_coherent_devices() -> Vec<serialport::SerialPortInfo> {
-    serialport::available_ports().unwrap()
+    serialport::available_ports().unwrap_or_default()
         .into_iter()
         .filter(
             |port| match &port.port_type {

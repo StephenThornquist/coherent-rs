@@ -8,7 +8,7 @@ keywords = ["microscopy", "coherent", "laser", "two-photon"]
 
 
 [dependencies]
-coherent-rs = { path = "../." }
+coherent-rs = { path = "../."}
 serde = { version = "1.0", features = ["derive"], optional = true}
 
 [lib]
@@ -16,4 +16,4 @@ name = "coherent_rs_c"
 crate-type = ["cdylib"]
 
 [features]
-network = ["dep:serde"]
+network = ["dep:serde", "coherent-rs/network"]

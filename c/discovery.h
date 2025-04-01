@@ -378,6 +378,11 @@ extern "C" {
      */
     API_IMPORT DiscoveryStatus discovery_client_query_status(DiscoveryClient client);
 
+    API_IMPORT void* host_discovery_server(Discovery laser, const char* port_name, size_t port_name_len);
+    API_IMPORT int poll_server(void* server);
+    API_IMPORT void stop_polling(void* server);
+    API_IMPORT void free_server(void* server);
+
     /**
      * @brief Demands to become the primary client of the connected server.
      * 

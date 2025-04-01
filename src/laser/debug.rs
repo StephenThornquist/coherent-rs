@@ -9,7 +9,7 @@ use crate::laser::discoverynx::{DiscoveryNXCommands, DiscoveryNXStatus, Discover
 use crate::laser::{Query, LaserState, ShutterState, LaserType, TuningStatus};
 
 
-/// The Coherent laser model Discovery NX.
+/// Mimics the Coherent laser model Discovery NX -- and uses its `DiscoveryNXCommands`.
 #[derive(Debug)]
 #[repr(C)]
 pub struct DebugLaser{
