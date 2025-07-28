@@ -289,6 +289,20 @@ extern "C" {
     API_IMPORT DiscoveryClient connect_discovery_client(const char* port_name, size_t port_name_len);
 
     /**
+     * @brief If unable to find a device, returns nullptr.
+     * Caller is responsible for freeing the returned DiscoveryClient.
+     * 
+     * Allows the user to set a timeout for communication over the socket
+     * 
+     * See `free_discovery_client` to free the returned DiscoveryClient.
+     * 
+     * @param port_name Port name of the device to connect to
+     * @param port_name_len Length of port_name char array
+     * @return `DiscoveryClient` or nullptr
+     */
+    API_IMPORT DiscoveryClient connect_discovery_client_with_timeout(const char* port_name, size_t port_name_len, uint32_t timeout_ms);
+
+    /**
      * @brief Must be called to avoid leaks!
      * 
      * @param client DiscoveryClient to free

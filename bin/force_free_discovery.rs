@@ -19,7 +19,7 @@ fn main() {
         std::process::exit(1);
     }
     let port = args[1].parse::<String>().unwrap();
-    let client = BasicNetworkLaserClient::<Discovery>::connect(port.as_str());
+    let client = BasicNetworkLaserClient::<Discovery>::connect(port.as_str(), None);
     match client {
         Ok(mut client) => {
             println!("Client connected to port {}", port);

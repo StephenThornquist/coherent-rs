@@ -7,7 +7,6 @@
 
 use std::io::{Read,Write};
 use std::marker::PhantomData;
-use std::sync::mpsc::RecvTimeoutError;
 use std::sync::{Arc, Mutex, atomic::AtomicBool, MutexGuard};
 use std::net::{TcpListener, TcpStream};
 use crate::{
@@ -262,12 +261,25 @@ impl<L : Laser + 'static> NetworkLaserServer<L> {
     /// `Mutex` is poisoned.
     pub fn get_laser(mut self) -> Result<L, TcpError> {
         self.stop_polling();
+        for client in self._clients.lock().unwrap().iter_mut() {
+            client.shutdown(std::net::Shutdown::Both)
+                .map_err(|e| TcpError::IoError(e))?;
+        }
+        self._clients.lock().unwrap().clear();
         Arc::try_unwrap(self._laser.take()
             .ok_or(TcpError::MultipleReferencesToLaser)?)
             .map(|l| l.into_inner().unwrap())
             .map_err(|_| TcpError::MutexPoisoned)
     }
 
+    /// Shorthand for unpacking the laser from the mutex.
+    /// Returns a `MutexGuard` to the laser, or an error if the laser is not set
+    /// or if the mutex is poisoned.
+    /// # Example
+    /// TODO
+    /// ```rust
+    /// 
+    /// ```
     fn guarded_laser(&self) -> Result<MutexGuard<'_, L>, TcpError> {
         self._laser.as_ref()
             .ok_or(TcpError::CommandError)?
@@ -287,13 +299,13 @@ impl<L : Laser + 'static> NetworkLaserServer<L> {
         self._polling.store(true, std::sync::atomic::Ordering::SeqCst);
         let _polling = self._polling.clone();
         let _clients = Arc::clone(&self._clients);
-        
+
         // Looks for new clients, identifies the type of laser and sends the status.
         self._client_connection_thread = Some(std::thread::spawn( move || {
             while _polling.load(std::sync::atomic::Ordering::SeqCst) {
-                for stream in _listener.incoming() {
-                    match stream {
-                        Ok(mut stream) => {
+                match _listener.accept() {
+                // for stream in _listener.incoming() {
+                    Ok((mut stream, _)) => {
                             let mut self_id = LASER_ID.to_vec();
                             if L::into_laser_type().serialize(
                                 &mut Serializer::new(&mut self_id))
@@ -305,26 +317,44 @@ impl<L : Laser + 'static> NetworkLaserServer<L> {
                                 .unwrap();
                             let mut clients = _clients.lock().unwrap();
                             clients.push(stream);
+                            drop(clients);
                         },
-                        Err(_) => {}   
+                        // Err(_) => {}
+                        Err(ref e) => {
+                            if e.kind() == std::io::ErrorKind::WouldBlock {
+                                // No new clients, continue polling
+                                std::thread::sleep(std::time::Duration::from_millis(10));
+                                continue;
+                            }
+                        }   
                     }
-                    if !_polling.load(std::sync::atomic::Ordering::SeqCst) {
-                        break;
-                    }
+                if !_polling.load(std::sync::atomic::Ordering::SeqCst) {
+                    break;
                 }   
             }
         }));
 
+
         let _polling_interval = self._polling_interval.clone();
         let _laser = self._laser.clone();
         let _polling = self._polling.clone();
-        let clients = Arc::clone(&self._clients);
-        
+        let _clients = Arc::clone(&self._clients);
+
         // Polls the laser, passes it to all the clients.
         self._polling_thread = Some(std::thread::spawn( move || {
             while _polling.load(std::sync::atomic::Ordering::SeqCst) { 
-                let mut clients = clients.lock().unwrap();
-                let mut laser_lock = _laser.as_ref().unwrap().lock().unwrap();
+                let mut clients = _clients.lock().unwrap();
+                let mut laser_lock : MutexGuard<'_, L>;
+                if let Some(ref_laser) = _laser.as_ref() {
+                    if let Ok(l) = ref_laser.lock() { laser_lock = l ;}
+                    else {
+                        _polling.store(false, std::sync::atomic::Ordering::SeqCst);
+                        return;
+                    }
+                }
+                else{_polling.store(false, std::sync::atomic::Ordering::SeqCst);
+                    return;
+                }
                 let serialized = match laser_lock.serialized_status() {
                     Ok(serialized) => {serialized},
                     Err(_) => {
@@ -358,7 +388,13 @@ impl<L : Laser + 'static> NetworkLaserServer<L> {
 
         self._command_thread = Some(std::thread::spawn( move || {
             while _polling.load(std::sync::atomic::Ordering::SeqCst) {
-                let mut clients = _clients.lock().unwrap();
+                match _clients.lock() {
+                Err(_) => {
+                    // Mutex is poisoned, stop polling
+                    eprintln!("Clients mutex poisoned, stopping command thread.");
+                    return;
+                },
+                Ok(mut clients) => {        
                 // Iterate across all connected clients
                 for client in clients.iter_mut() {
                     let mut buf_ptr = 0;
@@ -422,22 +458,20 @@ impl<L : Laser + 'static> NetworkLaserServer<L> {
                                 let mut laser = _laser.lock().unwrap();
                                 match laser.send_command(command) {
                                     Ok(_) => {
-                                        client.write_all(COMMAND_SUCCESSFUL).unwrap();
-                                    },
-                                    Err(_) => {
-                                        client.write_all(COMMAND_FAILED).unwrap();
+                                        client.write_all(COMMAND_SUCCESSFUL).unwrap();},
+                                    Err(_) => {client.write_all(COMMAND_FAILED).unwrap();}
                                     }
                                 }
-                            }
-                        },
-                        Err(_) => {}
-                    }
-                };
-                drop(clients); // free it BEFORE you sleep!
-                // sleep prevents over-locking the mutexes
-                std::thread::sleep(std::time::Duration::from_millis(_command_interval_ms));   
+                            },
+                            Err(_) => {}
+                        }
+                    };
+                    drop(clients); // free it BEFORE you sleep!
+                    // sleep prevents over-locking the mutexes
+                    std::thread::sleep(std::time::Duration::from_millis(_command_interval_ms));   
+                }
             }
-        }));
+        }}));
 
         Ok(())
     }
@@ -447,17 +481,14 @@ impl<L : Laser + 'static> NetworkLaserServer<L> {
             return;
         }
         self._polling.store(false, std::sync::atomic::Ordering::SeqCst);
-        match self._client_connection_thread.take() {
-            Some(thread) => thread.join().unwrap_or(()),
-            None => {}
+        if let Some(thread) = self._client_connection_thread.take() {
+            thread.join().unwrap_or(())
         }
-        match self._polling_thread.take() {
-            Some(thread) => thread.join().unwrap_or(()),
-            None => {}
+        if let Some(thread) = self._polling_thread.take() {
+            thread.join().unwrap_or(())
         }
-        match self._command_thread.take() {
-            Some(thread) => thread.join().unwrap_or(()),
-            None => {}
+        if let Some(thread) = self._command_thread.take() {
+            thread.join().unwrap_or(())
         }
     }
 
@@ -468,21 +499,18 @@ impl<L : Laser + 'static> NetworkLaserServer<L> {
 
     /// Send a command to the laser through the mutex
     pub fn command(&self, command : L::CommandEnum) -> Result<(), TcpError> {
-        let mut laser = self._laser.as_ref().ok_or_else(||TcpError::CommandError)?
-            .lock().or(Err(TcpError::MutexPoisoned))?;
+        let mut laser = self.guarded_laser()?;
         laser.send_command(command).map_err(|e| TcpError::CoherentError(e))
     }
 
     /// Send a query to the laser through the mutex
     pub fn query<Q : Query> (&self, query : Q) -> Result<Q::Result, TcpError> {
-        let mut laser = self._laser.as_ref().ok_or_else(||TcpError::CommandError)?
-            .lock().or(Err(TcpError::MutexPoisoned))?;
+        let mut laser = self.guarded_laser()?;
         laser.query(query).map_err(|e| TcpError::CoherentError(e))
     }
 
     pub fn status(&self) -> Result<L::LaserStatus, TcpError> {
-        let mut laser = self._laser.as_ref().ok_or_else(||TcpError::CommandError)?
-            .lock().or(Err(TcpError::MutexPoisoned))?;
+        let mut laser = self.guarded_laser()?;
         laser.status().map_err(|e| TcpError::CoherentError(e))
     }
 }
@@ -554,13 +582,28 @@ pub trait NetworkLaserClient<L : Laser> : Sized {
     
     /// Access a laser type parameter
     fn get_laser_type(&self) -> LaserType {L::into_laser_type()}
+
+    /// Tests whether the stream is live by trying to write
+    /// to it.
+    fn test_stream(&mut self) -> Result<(), TcpError> {
+        let mut buf = [0u8; 1];
+        match self.access_stream().read(&mut buf) {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                match e.kind() {
+                    std::io::ErrorKind::Interrupted => {Err(TcpError::IoError(e))}
+                    _ => {Ok(())}
+                }
+            }
+        }
+    }
     
     /// Generically sends a command to the laser over the network. Blocks
     /// until it receives confirmation that the command was sent or failed.
     fn command(&mut self, command : L::CommandEnum) -> Result<(), TcpError> {
 
-        // self.access_stream().flush().map_err(|e| TcpError::IoError(e))?;
-        
+        self.test_stream()?;
+
         let mut buf = Vec::new();
         buf.extend(COMMAND_MARKER);
         command.serialize(&mut Serializer::new(&mut buf))
@@ -584,7 +627,11 @@ pub trait NetworkLaserClient<L : Laser> : Sized {
             match self.access_stream().read(&mut buf) {
                 Ok(n) => {
                     // Append the new data to the accumulated buffer
-                    data.extend_from_slice(&buf[..n]);
+                    if n>0 { data.extend_from_slice(&buf[..n]); }
+                    else {
+                        // Check that the stream is still live.
+                        self.test_stream()?;
+                    }
                 }
                 Err(e) => {
                     // Handle I/O errors
@@ -682,7 +729,7 @@ mod tests {
     use crate::laser::{Discovery, DiscoveryNXCommands, DiscoveryLaser};
     use crate::laser::debug::DebugLaser;
 
-    const TEST_IP : &str = "127.0.0.1:999";
+    const TEST_IP : &str = "127.0.0.1:9999";
 
     #[test]
     fn test_deserialize_laser_type(){
@@ -866,7 +913,8 @@ mod tests {
         let discovery = DebugLaser::find_first().unwrap();
 
         let mut network_laser = NetworkLaserServer::new(
-            discovery, "127.0.0.1:9070", 
+            // discovery, "127.0.0.1:9070", 
+            discovery, TEST_IP,
             Some(0.5),
             // None
             ).unwrap();
@@ -881,7 +929,8 @@ mod tests {
 
         println!{"Server created"};
 
-        let mut my_interface = BasicNetworkLaserClient::<DebugLaser>::connect("127.0.0.1:9070", None).unwrap();
+        let mut my_interface = BasicNetworkLaserClient::<DebugLaser>::connect(
+            TEST_IP, None).unwrap();
         assert_eq!(crate::laser::LaserType::DebugLaser, my_interface.get_laser_type());
 
 
@@ -892,7 +941,8 @@ mod tests {
         println!{"Query took {:?}", start.elapsed()};
         assert_eq!(read_status.variable_shutter, false.into());
 
-        let mut second_interface = BasicNetworkLaserClient::<DebugLaser>::connect("127.0.0.1:9070", None).unwrap();
+        let mut second_interface = BasicNetworkLaserClient::<DebugLaser>::connect(
+            TEST_IP, None).unwrap();
 
         //print how long the command takes
         let start = std::time::Instant::now();
@@ -934,30 +984,32 @@ mod tests {
         assert!(!network_laser.polling());
     }
 
-    /// Tests the case where the Mutex becomes poisoned -- should
-    /// re-connect and continue polling.
+    /// Tests the case where the server is destroyed while a client is connected.
     /// 
     /// UNFINISHED!
     #[test]
-    fn test_poisoned_mutex(){
+    fn test_disconnect_debug(){
         use crate::{laser::debug::DebugLaser, laser::DiscoveryNXCommands,
             network::{NetworkLaserServer, BasicNetworkLaserClient}
         };
 
         let discovery = DebugLaser::find_first().unwrap();
+        // let discovery = Discovery::find_first().unwrap();
 
         let mut server = NetworkLaserServer::new(discovery, TEST_IP, Some(0.2))
             .unwrap(); // polling interval = 200 ms
         server.poll().unwrap();
 
+        // let mut client = BasicNetworkLaserClient::<Discovery>::connect(TEST_IP, Some(500)).unwrap();
         let mut client = BasicNetworkLaserClient::<DebugLaser>::connect(TEST_IP, Some(500)).unwrap();
 
+        println!("{:?}", client.query_status().unwrap());
         // Now destroy the server and poison the mutex
-        server.get_laser().unwrap();
-
+        let mut laser_ref = server.get_laser().unwrap();
+        println!("{:?}", laser_ref.get_fault_text());
         
-        // client.query_status()
-            // .expect_err("Should have failed to query status after server was stopped");
+        client.query_status()
+            .expect_err("Should have failed to query status after server was stopped");
 
     }
 

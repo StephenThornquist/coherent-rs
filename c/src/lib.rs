@@ -229,11 +229,27 @@ pub extern "C" fn connect_discovery_client(port : *const u8, port_len : usize) -
         std::str::from_utf8(std::slice::from_raw_parts(port, port_len)).unwrap()
     };
 
-    match BasicNetworkLaserClient::connect(port) {
+    match BasicNetworkLaserClient::connect(port, None) {
         Ok(client) => Box::into_raw(Box::new(client)),
         Err(_) => std::ptr::null_mut()
     }
 }
+
+#[cfg(feature="network")]
+#[no_mangle]
+/// Returns a pointer to a `NetworkLaserServer` object,
+/// or `std::ptr::null_mut()` if the server could not be created.
+pub extern "C" fn connect_discovery_client_with_timeout(port : *const u8, port_len : usize, timeout : u32) -> *mut BasicNetworkLaserClient<Discovery> {
+    let port = unsafe {
+        std::str::from_utf8(std::slice::from_raw_parts(port, port_len)).unwrap()
+    };
+
+    match BasicNetworkLaserClient::connect(port, Some(timeout)) {
+        Ok(client) => Box::into_raw(Box::new(client)),
+        Err(_) => std::ptr::null_mut()
+    }
+}
+
 
 #[cfg(feature = "network")]
 #[no_mangle]

@@ -10,6 +10,9 @@ use crate::laser::{Query, LaserState, ShutterState, LaserType, TuningStatus};
 
 
 /// Mimics the Coherent laser model Discovery NX -- and uses its `DiscoveryNXCommands`.
+/// 
+/// TODO: Make this use generics so that the DebugLaser can mimic any laser model --
+/// but will require the right code to map its commands to the right laser model....
 #[derive(Debug)]
 #[repr(C)]
 pub struct DebugLaser{

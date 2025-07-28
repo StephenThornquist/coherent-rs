@@ -1,5 +1,5 @@
 //! Host a Coherent laser on a network server with a port specified in the command line.
-
+use std::time::Duration;
 use coherent_rs::{
     Discovery,
     laser::Laser,
@@ -36,7 +36,7 @@ fn main() {
                     std::process::exit(1);
                 }
             }
-            while server.polling() {}
+            while server.polling() {std::thread::sleep(Duration::from_millis(5));}
             return ();
         }
         Err(e) => {
