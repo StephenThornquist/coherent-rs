@@ -272,6 +272,7 @@ pub extern "C" fn set_discovery_client_variable_shutter(
     )} {
         Ok(()) => 0,
         Err(TcpError::NotPrimaryClient) => -2,
+        Err(TcpError::Disconnected) => -3,
         Err(_) => -1,
     }
 }
@@ -290,6 +291,7 @@ pub extern "C" fn set_discovery_client_fixed_shutter(
     )} {
         Ok(()) => 0,
         Err(TcpError::NotPrimaryClient) => -2,
+        Err(TcpError::Disconnected) => -3,
         Err(_) => -1,
     }
 }
@@ -303,6 +305,7 @@ pub extern "C" fn set_discovery_client_wavelength(
     match unsafe {(*client).command(DiscoveryNXCommands::Wavelength{wavelength_nm : wavelength})} {
         Ok(()) => 0,
         Err(TcpError::NotPrimaryClient) => -2,
+        Err(TcpError::Disconnected) => -3,
         Err(_) => -1,
     }
 }
@@ -317,6 +320,7 @@ pub extern "C" fn set_discovery_client_to_standby(
         if to_standby {laser::LaserState::Standby} else {laser::LaserState::On}})} {
         Ok(()) => 0,
         Err(TcpError::NotPrimaryClient) => -2,
+        Err(TcpError::Disconnected) => -3,
         Err(_) => -1,
     }
 }
@@ -333,6 +337,7 @@ pub extern "C" fn set_discovery_client_variable_alignment(
     })} {
         Ok(()) => 0,
         Err(TcpError::NotPrimaryClient) => -2,
+        Err(TcpError::Disconnected) => -3,
         Err(_) => -1,
     }
 }
@@ -349,6 +354,7 @@ pub extern "C" fn set_discovery_client_fixed_alignment(
     })} {
         Ok(()) => 0,
         Err(TcpError::NotPrimaryClient) => -2,
+        Err(TcpError::Disconnected) => -3,
         Err(_) => -1,
     }
 }
@@ -362,6 +368,7 @@ pub extern "C" fn set_discovery_client_gdd(
     match unsafe {(*client).command(DiscoveryNXCommands::Gdd{gdd_val : gdd})}{
         Ok(()) => 0,
         Err(TcpError::NotPrimaryClient) => -2,
+        Err(TcpError::Disconnected) => -3,
         Err(_) => -1,
     }
 }
@@ -378,6 +385,7 @@ pub extern "C" fn set_discovery_client_gdd_curve(
     match unsafe {(*client).command(DiscoveryNXCommands::GddCurve {curve_num : curve as u8})} {
         Ok(()) => 0,
         Err(TcpError::NotPrimaryClient) => -2,
+        Err(TcpError::Disconnected) => -3,
         Err(_) => -1,
     }
 }
@@ -464,7 +472,59 @@ pub extern "C" fn discovery_client_query_status(client : *mut BasicNetworkLaserC
  -> CDiscoveryStatus {
     match unsafe {(*client).query_status()} {
         Ok(status) => discovery_status_to_csafe(status),
-        Err(_) => panic!("Error querying status")
+        Err(e) => {
+            match e {
+                TcpError::Disconnected => {
+                    CDiscoveryStatus {
+                        echo: false,
+                        laser: false,
+                        variable_shutter: false,
+                        fixed_shutter: false,
+                        keyswitch: false,
+                        faults: 0,
+                        fault_text: Box::new("Disconnected".to_string()),
+                        fault_text_len: "Disconnected".len(),
+                        tuning: false,
+                        alignment_var: false,
+                        alignment_fixed: false,
+                        status: Box::new("Disconnected".to_string()),
+                        status_len: "Disconnected".len(),
+                        wavelength: 0.0,
+                        power_var: 0.0,
+                        power_fixed: 0.0,
+                        gdd_curve: -1,
+                        gdd_curve_n: Box::new("Unknown".to_string()),
+                        gdd_curve_n_len: "Unknown".len(),
+                        gdd: 0.0,
+                    }
+                },
+                _ => {
+                    CDiscoveryStatus {
+                        echo: false,
+                        laser: false,
+                        variable_shutter: false,
+                        fixed_shutter: false,
+                        keyswitch: false,
+                        faults: 0,
+                        fault_text: Box::new("Error".to_string()),
+                        fault_text_len: "Error".len(),
+                        tuning: false,
+                        alignment_var: false,
+                        alignment_fixed: false,
+                        status: Box::new("Error".to_string()),
+                        status_len: "Error".len(),
+                        wavelength: 0.0,
+                        power_var: 0.0,
+                        power_fixed: 0.0,
+                        gdd_curve: -1,
+                        gdd_curve_n: Box::new("Unknown".to_string()),
+                        gdd_curve_n_len: "Unknown".len(),
+                        gdd: 0.0,
+                    }
+                },
+            }
+            // 
+        }
     }
 }
 

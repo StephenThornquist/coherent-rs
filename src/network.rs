@@ -40,6 +40,7 @@ pub enum TcpError {
     CommandError,
     NoLaserStatus,
     NotPrimaryClient,
+    Disconnected,
 }
 
 impl<T> Into<TcpError> for std::sync::PoisonError<T> {
@@ -591,7 +592,7 @@ pub trait NetworkLaserClient<L : Laser> : Sized {
             Ok(_) => Ok(()),
             Err(e) => {
                 match e.kind() {
-                    std::io::ErrorKind::Interrupted => {Err(TcpError::IoError(e))}
+                    std::io::ErrorKind::Interrupted => {Err(TcpError::Disconnected)}
                     _ => {Ok(())}
                 }
             }
