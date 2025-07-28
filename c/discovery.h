@@ -25,6 +25,7 @@
 
 
 #include<cstddef>
+#include <stdint.h>
 
 /**
  * @brief Raw pointer to a `Discovery` object
