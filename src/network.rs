@@ -322,11 +322,12 @@ impl<L : Laser + 'static> NetworkLaserServer<L> {
                         },
                         // Err(_) => {}
                         Err(ref e) => {
-                            if e.kind() == std::io::ErrorKind::WouldBlock {
-                                // No new clients, continue polling
-                                std::thread::sleep(std::time::Duration::from_millis(10));
-                                continue;
-                            }
+                            // if e.kind() == std::io::ErrorKind::WouldBlock {
+                            //     // No new clients, continue polling
+                            //     std::thread::sleep(std::time::Duration::from_millis(10));
+                            //     continue;
+                            // }
+                            std::thread::sleep(std::time::Duration::from_millis(10));
                         }   
                     }
                 if !_polling.load(std::sync::atomic::Ordering::SeqCst) {
